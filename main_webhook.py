@@ -1,9 +1,8 @@
-import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
 
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -11,18 +10,23 @@ from aiogram.types import Update
 from fastapi import FastAPI, Request
 
 from core.config import settings
-from core.intent_classifier import classifier
-from core.planfix_client import planfix
 from bot.handlers import support
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Создаем бота (исправленная строка)
-bot = Bot(token=settings.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+# Создаем бота ПРАВИЛЬНЫМ способом для aiogram 3.x
+bot = Bot(
+    token=settings.BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
+
+# Создаем диспетчер с хранилищем в памяти
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# Подключаем роутеры
+# Подключаем роутеры с обработчиками команд
 dp.include_router(support.router)
 
 # Настройка вебхука
@@ -32,20 +36,23 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL", "") + WEBHOOK_PATH
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # При запуске сервера — устанавливаем вебхук
+    """Управление жизненным циклом приложения"""
+    # При запуске - устанавливаем вебхук
     await bot.set_webhook(WEBHOOK_URL)
-    logging.info(f"Webhook set to {WEBHOOK_URL}")
+    logger.info(f"✅ Webhook установлен на: {WEBHOOK_URL}")
     yield
-    # При остановке — удаляем вебхук
+    # При остановке - удаляем вебхук
     await bot.delete_webhook()
+    logger.info("❌ Webhook удален")
 
 
+# Создаем FastAPI приложение
 app = FastAPI(lifespan=lifespan)
 
 
 @app.post(WEBHOOK_PATH)
 async def webhook(request: Request):
-    """Принимает обновления от Telegram"""
+    """Эндпоинт для получения обновлений от Telegram"""
     json_data = await request.json()
     update = Update.model_validate(json_data, context={"bot": bot})
     await dp.feed_update(bot, update)
@@ -53,10 +60,18 @@ async def webhook(request: Request):
 
 
 @app.get("/health")
-async def health():
-    return {"status": "alive"}
+async def health_check():
+    """Эндпоинт для проверки работоспособности"""
+    return {"status": "alive", "service": "taxi-support-bot"}
+
+
+@app.get("/")
+async def root():
+    """Корневой эндпоинт"""
+    return {"message": "Taxi Support Bot is running!"}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
