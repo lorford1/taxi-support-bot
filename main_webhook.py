@@ -4,6 +4,7 @@ import os
 from contextlib import asynccontextmanager
 
 from aiogram import Bot, Dispatcher, types
+from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Update
@@ -16,8 +17,8 @@ from bot.handlers import support
 
 logging.basicConfig(level=logging.INFO)
 
-# Создаем бота и диспетчер
-bot = Bot(token=settings.BOT_TOKEN, parse_mode=ParseMode.HTML)
+# Создаем бота (исправленная строка)
+bot = Bot(token=settings.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
