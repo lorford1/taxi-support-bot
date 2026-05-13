@@ -1,8 +1,10 @@
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
+from aiogram.enums import ParseMode
 
-from core.intent_classifier import classifier
+from core.llm_intent import llm_classifier
+from core.planfix_client import planfix
 
 router = Router()
 
@@ -10,58 +12,40 @@ router = Router()
 async def cmd_start(message: Message):
     await message.answer(
         "🚕 <b>Добро пожаловать в службу поддержки такси!</b>\n\n"
-        "Я помогаю водителям. Напишите ваш вопрос, и я постараюсь помочь.\n\n"
-        "<b>Примеры вопросов:</b>\n"
+        "Я — AI-помощник на базе GPT-4o-mini. Напишите свою проблему, и я помогу.\n\n"
+        "<b>Примеры:</b>\n"
         "• Куда делись деньги?\n"
-        "• Топливная карта не работает\n"
-        "• Нет доступа к сайту\n\n"
-        "Если бот не поможет, напишите <b>Оператор</b>",
-        parse_mode="HTML"
-    )
-
-@router.message(Command("help"))
-async def cmd_help(message: Message):
-    await message.answer(
-        "📋 <b>Команды:</b>\n"
-        "/start - начать работу\n"
-        "/help - эта справка\n\n"
-        "<b>Или просто напишите вашу проблему:</b>\n"
-        "• Деньги не пришли\n"
-        "• Карта заблокирована\n"
-        "• Нет доступа",
-        parse_mode="HTML"
+        "• Карта заблокировалась на заправке\n"
+        "• Не могу зайти в личный кабинет",
+        parse_mode=ParseMode.HTML
     )
 
 @router.message()
 async def handle_message(message: Message):
-    """Обработка любого сообщения"""
     user_text = message.text
+    user_name = message.from_user.full_name
     
-    # Проверка на вызов оператора
-    if user_text.lower() in ["оператор", "менеджер", "человек", "помощь"]:
-        await message.answer(
-            "👨‍💼 Сейчас соединю вас с оператором.\n"
-            "Пожалуйста, опишите вашу проблему, и специалист свяжется с вами."
+    # Вызываем GPT для анализа
+    result = await llm_classifier.classify(user_text)
+    
+    if result.get("need_manager"):
+        # Создаём задачу в Planfix
+        task_result = await planfix.create_task(
+            title=f"[{result.get('category', 'Поддержка')}] {user_name}",
+            description=f"""
+Сообщение: {user_text}
+Категория: {result.get('category')}
+Проблема: {result.get('problem')}
+Решение: {result.get('solution')}
+            """
         )
-        return
-    
-    # Анализируем через классификатор
-    result = classifier.classify(user_text)
-    
-    if result["found"]:
-        # Отправляем решение
-        response = f"{result['solution']}\n"
-        if result["need_manager"]:
-            response += "\n👨‍💼 Для решения этой проблемы потребуется помощь менеджера. Я создал заявку, ответим в ближайшее время."
         
-        await message.answer(response)
+        if task_result.get("success"):
+            await message.answer(
+                f"{result.get('response')}\n\n"
+                f"✅ Создана заявка №{task_result.get('general')}"
+            )
+        else:
+            await message.answer(result.get('response'))
     else:
-        # Не распознали проблему
-        await message.answer(
-            "🤔 Я не совсем понял вашу проблему.\n\n"
-            "Выберите категорию:\n"
-            "• Выплаты / деньги\n"
-            "• Топливная карта\n"
-            "• Доступ к сайту\n\n"
-            "Или напишите 'Оператор' для связи со специалистом."
-        )
+        await message.answer(result.get('response'))
