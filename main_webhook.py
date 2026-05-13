@@ -26,7 +26,7 @@ dp = Dispatcher(storage=storage)
 
 dp.include_router(support.router)
 
-WEBHOOK_PATH = f"/webhook/{settings.BOT_TOKEN}"
+WEBHOOK_PATH = f"/webhook/8742752684:AAFzIdIvsYSaCE3he4vunLpxciqacLTFWjc"
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "") + WEBHOOK_PATH
 
 
