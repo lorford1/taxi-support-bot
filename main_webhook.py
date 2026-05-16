@@ -11,38 +11,50 @@ from fastapi import FastAPI, Request
 
 from core.config import settings
 from bot.handlers import support
+from bot.handlers.registration import router as registration_router
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Правильное создание бота для aiogram 3.x
+# Создаем бота ПРАВИЛЬНЫМ способом для aiogram 3.x
 bot = Bot(
     token=settings.BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 
+# Создаем диспетчер с хранилищем в памяти
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+# Подключаем роутеры с обработчиками команд
 dp.include_router(support.router)
+dp.include_router(registration_router)
 
-WEBHOOK_PATH = f"/webhook/8742752684:AAFzIdIvsYSaCE3he4vunLpxciqacLTFWjc"
+# Настройка вебхука
+WEBHOOK_PATH = f"/webhook/{settings.BOT_TOKEN}"
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "") + WEBHOOK_PATH
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Управление жизненным циклом приложения"""
+    # При запуске - устанавливаем вебхук
     await bot.set_webhook(WEBHOOK_URL)
-    logger.info(f"Webhook set to {WEBHOOK_URL}")
+    logger.info(f"✅ Webhook установлен на: {WEBHOOK_URL}")
     yield
+    # При остановке - удаляем вебхук
     await bot.delete_webhook()
+    logger.info("❌ Webhook удален")
 
 
+# Создаем FastAPI приложение
 app = FastAPI(lifespan=lifespan)
 
 
 @app.post(WEBHOOK_PATH)
 async def webhook(request: Request):
+    """Эндпоинт для получения обновлений от Telegram"""
     json_data = await request.json()
     update = Update.model_validate(json_data, context={"bot": bot})
     await dp.feed_update(bot, update)
@@ -50,12 +62,14 @@ async def webhook(request: Request):
 
 
 @app.get("/health")
-async def health():
-    return {"status": "alive"}
+async def health_check():
+    """Эндпоинт для проверки работоспособности"""
+    return {"status": "alive", "service": "taxi-support-bot"}
 
 
 @app.get("/")
 async def root():
+    """Корневой эндпоинт"""
     return {"message": "Taxi Support Bot is running!"}
 
 

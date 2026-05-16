@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -14,8 +14,10 @@ class RegistrationStates(StatesGroup):
     waiting_for_fullname = State()
 
 
-# Клавиатура после регистрации
+# ============ КЛАВИАТУРЫ ============
+
 def get_registered_keyboard():
+    """Клавиатура для зарегистрированного пользователя"""
     buttons = [
         [KeyboardButton(text="⛽ Топливная карта")],
         [KeyboardButton(text="💵 Выплаты и зарплата")],
@@ -29,12 +31,14 @@ def get_registered_keyboard():
 
 
 def get_unregistered_keyboard():
+    """Клавиатура для незарегистрированного пользователя"""
     buttons = [
-        [KeyboardButton(text="📝 Зарегистрироваться")],
-        [KeyboardButton(text="❓ Помощь")]
+        [KeyboardButton(text="📝 Зарегистрироваться")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
+
+# ============ ОБРАБОТЧИКИ ============
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -74,6 +78,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @router.message(F.text == "📝 Зарегистрироваться")
 async def start_registration(message: Message, state: FSMContext):
+    """Начало процесса регистрации"""
     await message.answer(
         "📝 <b>Регистрация водителя</b>\n\n"
         "Пожалуйста, введите ваш <b>ID</b> (номер водителя в системе).\n\n"
@@ -87,8 +92,10 @@ async def start_registration(message: Message, state: FSMContext):
 
 @router.message(RegistrationStates.waiting_for_id)
 async def process_id(message: Message, state: FSMContext):
+    """Обработка ID водителя"""
     driver_id = message.text.strip()
     
+    # Проверяем, что ID состоит из цифр
     if not driver_id.isdigit():
         await message.answer(
             "❌ <b>Неверный формат ID</b>\n\n"
@@ -98,6 +105,7 @@ async def process_id(message: Message, state: FSMContext):
         )
         return
     
+    # Сохраняем ID
     await state.update_data(driver_id=driver_id)
     
     await message.answer(
@@ -111,8 +119,10 @@ async def process_id(message: Message, state: FSMContext):
 
 @router.message(RegistrationStates.waiting_for_fullname)
 async def process_fullname(message: Message, state: FSMContext):
+    """Обработка ФИО водителя"""
     fullname = message.text.strip()
     
+    # Простая проверка: должно быть минимум 2 слова
     if len(fullname.split()) < 2:
         await message.answer(
             "❌ <b>Неверный формат ФИО</b>\n\n"
@@ -122,6 +132,7 @@ async def process_fullname(message: Message, state: FSMContext):
         )
         return
     
+    # Получаем сохранённый ID
     user_data = await state.get_data()
     driver_id = user_data.get("driver_id")
     telegram_id = str(message.from_user.id)
@@ -132,6 +143,7 @@ async def process_fullname(message: Message, state: FSMContext):
         "fullname": fullname,
         "telegram_id": telegram_id,
         "telegram_name": message.from_user.full_name,
+        "telegram_username": message.from_user.username,
         "registered_at": message.date.isoformat()
     })
     
@@ -155,6 +167,7 @@ async def process_fullname(message: Message, state: FSMContext):
 
 @router.message(F.text == "🆔 Мой профиль")
 async def show_profile(message: Message, state: FSMContext):
+    """Показать профиль водителя"""
     telegram_id = str(message.from_user.id)
     user = user_storage.get_user(telegram_id)
     
@@ -179,6 +192,7 @@ async def show_profile(message: Message, state: FSMContext):
 
 @router.message(Command("cancel"))
 async def cancel_registration(message: Message, state: FSMContext):
+    """Отмена регистрации"""
     await state.clear()
     await message.answer(
         "❌ Регистрация отменена.\n\n"
