@@ -1,33 +1,21 @@
-import json
-import os
-
-USERS_FILE = "users_data.json"
+from storage.database import db
 
 class UserStorage:
-    def __init__(self):
-        self.users = {}
-        self._load()
-    
-    def _load(self):
-        if os.path.exists(USERS_FILE):
-            try:
-                with open(USERS_FILE, 'r', encoding='utf-8') as f:
-                    self.users = json.load(f)
-            except:
-                self.users = {}
-    
-    def _save(self):
-        with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(self.users, f, ensure_ascii=False, indent=2)
+    """Обёртка для совместимости со старым кодом"""
     
     def get_user(self, telegram_id: str):
-        return self.users.get(str(telegram_id))
+        return db.get_user(telegram_id)
     
     def save_user(self, telegram_id: str, data: dict):
-        self.users[str(telegram_id)] = data
-        self._save()
+        db.save_user(
+            telegram_id=telegram_id,
+            driver_id=data.get('driver_id'),
+            fullname=data.get('fullname'),
+            telegram_name=data.get('telegram_name'),
+            telegram_username=data.get('telegram_username')
+        )
     
     def is_registered(self, telegram_id: str) -> bool:
-        return str(telegram_id) in self.users
+        return db.is_registered(telegram_id)
 
 user_storage = UserStorage()
