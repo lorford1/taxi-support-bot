@@ -101,7 +101,6 @@ ANSWERS = {
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
-    """Обработка команды /start"""
     telegram_id = str(message.from_user.id)
     user = user_storage.get_user(telegram_id)
     
@@ -134,7 +133,7 @@ async def cmd_help(message: Message):
     await message.answer(
         "📋 <b>Как пользоваться ботом:</b>\n\n"
         "1️⃣ Нажмите на категорию проблемы\n"
-        "2️⃣ Выберите конкретную проблему\n"
+        "2️⃣ Выберите конкретую проблему\n"
         "3️⃣ Бот создаст заявку и даст ответ\n\n"
         "<b>Команды:</b>\n"
         "/start — главное меню\n"
@@ -166,6 +165,8 @@ async def call_operator(message: Message, state: FSMContext):
     driver_name = user_data.get('fullname', message.from_user.full_name)
     driver_id = user_data.get('driver_id', 'не указан')
     
+    status_msg = await message.answer("🔄 Создаю заявку оператору...")
+    
     result = await planfix.create_task(
         title=f"🚨 Срочный вызов оператора: {driver_name}",
         description=f"""
@@ -179,18 +180,21 @@ async def call_operator(message: Message, state: FSMContext):
         """
     )
     
+    await status_msg.delete()
+    
     if result.get("success"):
         await message.answer(
-            "👨‍💼 <b>Соединяю с оператором...</b>\n\n"
+            f"👨‍💼 <b>Соединяю с оператором...</b>\n\n"
             f"✅ Создана заявка №{result.get('general')}\n\n"
-            "Специалист свяжется с вами в ближайшее время.\n\n"
-            "Пожалуйста, опишите вашу проблему подробнее.",
+            f"Специалист свяжется с вами в ближайшее время.\n\n"
+            f"Пожалуйста, опишите вашу проблему подробнее.",
             parse_mode="HTML"
         )
     else:
         await message.answer(
-            "👨‍💼 Создана заявка оператору.\n\n"
-            "Специалист свяжется с вами в ближайшее время.",
+            f"❌ <b>Ошибка при создании заявки!</b>\n\n"
+            f"📋 Ошибка: {result.get('error')}\n\n"
+            f"Пожалуйста, обратитесь к оператору напрямую.",
             parse_mode="HTML"
         )
 
@@ -226,6 +230,8 @@ async def unblock_card(message: Message, state: FSMContext):
     driver_name = user_data.get('fullname', 'водитель')
     driver_id = user_data.get('driver_id', 'не указан')
     
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
     result = await planfix.create_task(
         title=f"⛽ Разблокировка карты: {driver_name} (ID: {driver_id})",
         description=f"""
@@ -238,18 +244,24 @@ async def unblock_card(message: Message, state: FSMContext):
         """
     )
     
+    await status_msg.delete()
+    
     if result.get("success"):
         await message.answer(
             f"🔓 <b>Хорошо, {driver_name}!</b>\n\n"
-            f"✅ Создана заявка на разблокировку карты. Номер: #{result.get('general')}\n\n"
-            f"⏱️ Обычно разблокировка занимает до 30 минут.\n\n"
-            f"⚠️ Карта блокируется автоматически при минусовом балансе на Яндексе.",
+            f"✅ Заявка №{result.get('general')} создана в Planfix!\n\n"
+            f"📅 Задача появится в Планировщике.\n\n"
+            f"👨‍💼 Специалист свяжется с вами.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
     else:
+        error_text = result.get('error', 'Неизвестная ошибка')
         await message.answer(
-            "🔓 Создал заявку на разблокировку. Специалист свяжется с вами.",
+            f"❌ <b>Ошибка при создании заявки!</b>\n\n"
+            f"📋 Текст ошибки:\n<code>{error_text}</code>\n\n"
+            f"Пожалуйста, обратитесь к оператору.",
+            parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
 
@@ -259,18 +271,28 @@ async def update_limit(message: Message, state: FSMContext):
     user_data = await state.get_data()
     driver_name = user_data.get('fullname', 'водитель')
     
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
     result = await planfix.create_task(
         title=f"📈 Обновление лимита: {driver_name}",
         description=f"Запрос на обновление лимита топливной карты\nВодитель: {driver_name}"
     )
     
-    await message.answer(
-        f"📈 <b>Хорошо, {driver_name}!</b>\n\n"
-        f"✅ Создана заявка на обновление лимита. Номер: #{result.get('general')}\n\n"
-        f"⛽ Лимит будет обновлён в ближайшее время.",
-        parse_mode="HTML",
-        reply_markup=get_fuel_card_keyboard()
-    )
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            f"📈 <b>Хорошо, {driver_name}!</b>\n\n"
+            f"✅ Создана заявка на обновление лимита. Номер: #{result.get('general')}\n\n"
+            f"⛽ Лимит будет обновлён в ближайшее время.",
+            parse_mode="HTML",
+            reply_markup=get_fuel_card_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка: {result.get('error')}\nОбратитесь к оператору.",
+            reply_markup=get_fuel_card_keyboard()
+        )
 
 
 @router.message(F.text == "⛽ Не работает на заправке")
@@ -278,19 +300,29 @@ async def card_not_working(message: Message, state: FSMContext):
     user_data = await state.get_data()
     driver_name = user_data.get('fullname', 'водитель')
     
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
     result = await planfix.create_task(
         title=f"⛽ Проблема на заправке: {driver_name}",
         description=f"Водитель сообщает, что карта не работает на заправке\nВодитель: {driver_name}"
     )
     
-    await message.answer(
-        f"⛽ <b>Понимаю вашу ситуацию, {driver_name}!</b>\n\n"
-        f"✅ Создана заявка в техподдержку. Номер: #{result.get('general')}\n\n"
-        f"🛠️ Специалист проверит статус вашей карты.\n\n"
-        f"💡 Попробуйте перезагрузить приложение BNCard.",
-        parse_mode="HTML",
-        reply_markup=get_fuel_card_keyboard()
-    )
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            f"⛽ <b>Понимаю вашу ситуацию, {driver_name}!</b>\n\n"
+            f"✅ Создана заявка в техподдержку. Номер: #{result.get('general')}\n\n"
+            f"🛠️ Специалист проверит статус вашей карты.\n\n"
+            f"💡 Попробуйте перезагрузить приложение BNCard.",
+            parse_mode="HTML",
+            reply_markup=get_fuel_card_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка: {result.get('error')}",
+            reply_markup=get_fuel_card_keyboard()
+        )
 
 
 @router.message(F.text == "🆕 Заказать новую карту")
@@ -349,16 +381,26 @@ async def where_is_money(message: Message, state: FSMContext):
     user_data = await state.get_data()
     driver_name = user_data.get('fullname', 'водитель')
     
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
     result = await planfix.create_task(
         title=f"💰 Проверка выплаты: {driver_name}",
         description=f"Запрос на проверку статуса выплаты\nВодитель: {driver_name}"
     )
     
-    await message.answer(
-        ANSWERS["где мои деньги"].format(result.get('general', 'создана')),
-        parse_mode="HTML",
-        reply_markup=get_payments_keyboard()
-    )
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            ANSWERS["где мои деньги"].format(result.get('general', 'создана')),
+            parse_mode="HTML",
+            reply_markup=get_payments_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка: {result.get('error')}",
+            reply_markup=get_payments_keyboard()
+        )
 
 
 @router.message(F.text == "📈 Увеличить квоту")
@@ -366,16 +408,26 @@ async def increase_quota(message: Message, state: FSMContext):
     user_data = await state.get_data()
     driver_name = user_data.get('fullname', 'водитель')
     
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
     result = await planfix.create_task(
         title=f"📈 Увеличение квоты: {driver_name}",
         description=f"Запрос на увеличение квоты вывода средств\nВодитель: {driver_name}"
     )
     
-    await message.answer(
-        ANSWERS["увеличить квоту"].format(result.get('general', 'создана')),
-        parse_mode="HTML",
-        reply_markup=get_payments_keyboard()
-    )
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            ANSWERS["увеличить квоту"].format(result.get('general', 'создана')),
+            parse_mode="HTML",
+            reply_markup=get_payments_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка: {result.get('error')}",
+            reply_markup=get_payments_keyboard()
+        )
 
 
 @router.message(F.text == "💳 Ошибка в реквизитах")
@@ -383,16 +435,26 @@ async def wrong_details(message: Message, state: FSMContext):
     user_data = await state.get_data()
     driver_name = user_data.get('fullname', 'водитель')
     
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
     result = await planfix.create_task(
         title=f"💳 Ошибка в реквизитах: {driver_name}",
         description=f"Запрос на проверку реквизитов карты\nВодитель: {driver_name}"
     )
     
-    await message.answer(
-        ANSWERS["ошибка реквизиты"].format(result.get('general', 'создана')),
-        parse_mode="HTML",
-        reply_markup=get_payments_keyboard()
-    )
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            ANSWERS["ошибка реквизиты"].format(result.get('general', 'создана')),
+            parse_mode="HTML",
+            reply_markup=get_payments_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка: {result.get('error')}",
+            reply_markup=get_payments_keyboard()
+        )
 
 
 # ============ КАТЕГОРИЯ: ДОСТУП К САЙТУ ============
@@ -422,17 +484,27 @@ async def open_access(message: Message, state: FSMContext):
     driver_name = user_data.get('fullname', 'водитель')
     driver_id = user_data.get('driver_id', 'не указан')
     
-    await planfix.create_task(
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
+    result = await planfix.create_task(
         title=f"🔐 Запрос доступа: {driver_name} (ID: {driver_id})",
         description=f"Запрос на открытие доступа к сайту\nВодитель: {driver_name}\nID: {driver_id}"
     )
     
-    await message.answer(
-        ANSWERS["открыть доступ"],
-        parse_mode="HTML",
-        reply_markup=get_access_keyboard(),
-        disable_web_page_preview=True
-    )
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            ANSWERS["открыть доступ"],
+            parse_mode="HTML",
+            reply_markup=get_access_keyboard(),
+            disable_web_page_preview=True
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка: {result.get('error')}",
+            reply_markup=get_access_keyboard()
+        )
 
 
 @router.message(F.text == "📝 Зарегистрироваться на сайте")
@@ -488,16 +560,26 @@ async def app_problem(message: Message, state: FSMContext):
     user_data = await state.get_data()
     driver_name = user_data.get('fullname', 'водитель')
     
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
     result = await planfix.create_task(
         title=f"📱 Проблема с приложением: {driver_name}",
         description=f"Запрос о проблеме с приложением Яндекс Про\nВодитель: {driver_name}"
     )
     
-    await message.answer(
-        ANSWERS["проблема приложение"].format(result.get('general', 'создана')),
-        parse_mode="HTML",
-        reply_markup=get_support_keyboard()
-    )
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            ANSWERS["проблема приложение"].format(result.get('general', 'создана')),
+            parse_mode="HTML",
+            reply_markup=get_support_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка: {result.get('error')}",
+            reply_markup=get_support_keyboard()
+        )
 
 
 @router.message(F.text == "🚫 Нет заказов")
@@ -505,16 +587,26 @@ async def no_orders(message: Message, state: FSMContext):
     user_data = await state.get_data()
     driver_name = user_data.get('fullname', 'водитель')
     
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
     result = await planfix.create_task(
         title=f"🚫 Нет заказов: {driver_name}",
         description=f"Запрос о проблеме отсутствия заказов\nВодитель: {driver_name}"
     )
     
-    await message.answer(
-        ANSWERS["нет заказов"].format(result.get('general', 'создана')),
-        parse_mode="HTML",
-        reply_markup=get_support_keyboard()
-    )
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            ANSWERS["нет заказов"].format(result.get('general', 'создана')),
+            parse_mode="HTML",
+            reply_markup=get_support_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка: {result.get('error')}",
+            reply_markup=get_support_keyboard()
+        )
 
 
 @router.message(F.text == "⭐ Упал рейтинг")
@@ -522,13 +614,23 @@ async def rating_dropped(message: Message, state: FSMContext):
     user_data = await state.get_data()
     driver_name = user_data.get('fullname', 'водитель')
     
+    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    
     result = await planfix.create_task(
         title=f"⭐ Вопрос по рейтингу: {driver_name}",
         description=f"Запрос о падении рейтинга водителя\nВодитель: {driver_name}"
     )
     
-    await message.answer(
-        ANSWERS["упал рейтинг"].format(result.get('general', 'создана')),
-        parse_mode="HTML",
-        reply_markup=get_support_keyboard()
-    )
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            ANSWERS["упал рейтинг"].format(result.get('general', 'создана')),
+            parse_mode="HTML",
+            reply_markup=get_support_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка: {result.get('error')}",
+            reply_markup=get_support_keyboard()
+        )
