@@ -35,6 +35,7 @@ class PlanfixClient:
     ) -> Dict[str, Any]:
         """
         Создание задачи через XML API Planfix
+        Задача отображается в Планировщике (календаре)
         """
         # Если даты не указаны — ставим сегодня и завтра
         if start_date is None:
@@ -46,15 +47,28 @@ class PlanfixClient:
         title = self._escape_xml(title)
         description = self._escape_xml(description)
         
-        # Формируем XML запрос
+        # Формируем XML запрос с ПОЛНЫМИ данными для планировщика
         xml_body = f'''<?xml version="1.0" encoding="UTF-8"?>
 <request method="task.add">
     <account>{self.account}</account>
     <task>
         <title>{title}</title>
         <description>{description}</description>
+        
+        <!-- ПОЛЯ ДЛЯ ОТОБРАЖЕНИЯ В ПЛАНИРОВЩИКЕ -->
+        <startDateIsSet>1</startDateIsSet>
         <startDate>{start_date}</startDate>
+        <startTimeIsSet>1</startTimeIsSet>
+        <startTime>09:00:00</startTime>
+        
+        <endDateIsSet>1</endDateIsSet>
         <endDate>{end_date}</endDate>
+        <endTimeIsSet>1</endTimeIsSet>
+        <endTime>18:00:00</endTime>
+        
+        <durationIsSet>1</durationIsSet>
+        <duration>480</duration>
+        <durationUnit>0</durationUnit>
     </task>
 </request>'''
         
@@ -63,8 +77,8 @@ class PlanfixClient:
             'Accept': 'application/xml'
         }
         
-        logger.info(f"Создаем задачу в Planfix: {title}")
-        logger.info(f"XML запрос: {xml_body}")
+        logger.info(f"📤 Создаем задачу в Planfix: {title}")
+        logger.debug(f"📋 XML запрос: {xml_body}")
         
         try:
             async with aiohttp.ClientSession() as session:
@@ -75,8 +89,8 @@ class PlanfixClient:
                     auth=self.auth
                 ) as response:
                     text = await response.text()
-                    logger.info(f"Статус: {response.status}")
-                    logger.info(f"ОТВЕТ PLANFIX: {text}")
+                    logger.info(f"📊 Статус HTTP: {response.status}")
+                    logger.info(f"📨 Ответ Planfix: {text}")
                     
                     if response.status == 200:
                         root = ET.fromstring(text)
@@ -85,7 +99,7 @@ class PlanfixClient:
                         if status == 'ok':
                             task_id = root.findtext('.//task/id')
                             task_general = root.findtext('.//task/general')
-                            logger.info(f"✅ Задача создана! ID: {task_id}, General: {task_general}")
+                            logger.info(f"✅ Задача успешно создана! ID: {task_id}, General: {task_general}")
                             return {
                                 "success": True,
                                 "id": task_id,
@@ -101,13 +115,13 @@ class PlanfixClient:
                                 "error": f"API error {error_code}: {error_msg}"
                             }
                     else:
-                        logger.error(f"❌ HTTP ошибка: {response.status} - {text[:500]}")
+                        logger.error(f"❌ HTTP ошибка {response.status}: {text[:500]}")
                         return {
                             "success": False,
                             "error": f"HTTP {response.status}: {text[:200]}"
                         }
         except Exception as e:
-            logger.error(f"❌ Исключение: {e}")
+            logger.error(f"❌ Исключение при запросе: {e}")
             return {"success": False, "error": str(e)}
     
     def _escape_xml(self, text: str) -> str:
@@ -153,7 +167,7 @@ class PlanfixClient:
                 ) as response:
                     return response.status == 200
         except Exception as e:
-            logger.error(f"Ошибка комментария: {e}")
+            logger.error(f"Ошибка добавления комментария: {e}")
             return False
     
     async def find_contact_by_phone(self, phone: str) -> Optional[Dict]:
@@ -197,8 +211,9 @@ class PlanfixClient:
                                 "name": contact.findtext('name')
                             }
         except Exception as e:
-            logger.error(f"Ошибка поиска: {e}")
+            logger.error(f"Ошибка поиска контакта: {e}")
         
         return None
 
+# Создаем глобальный экземпляр
 planfix = PlanfixClient()
