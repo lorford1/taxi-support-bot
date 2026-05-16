@@ -30,7 +30,6 @@ class PlanfixClient:
         client_id: Optional[int] = None,
         assignee_id: Optional[int] = None,
         importance: int = 1,
-        # Параметры для Планировщика
         start_date: str = None,
         end_date: str = None
     ) -> Dict[str, Any]:
@@ -54,7 +53,6 @@ class PlanfixClient:
     <task>
         <title>{title}</title>
         <description>{description}</description>
-        <importance>{importance}</importance>
         <startDate>{start_date}</startDate>
         <endDate>{end_date}</endDate>
     </task>
@@ -66,7 +64,7 @@ class PlanfixClient:
         }
         
         logger.info(f"Создаем задачу в Planfix: {title}")
-        logger.debug(f"XML запрос: {xml_body[:500]}...")
+        logger.info(f"XML запрос: {xml_body}")
         
         try:
             async with aiohttp.ClientSession() as session:
@@ -78,7 +76,7 @@ class PlanfixClient:
                 ) as response:
                     text = await response.text()
                     logger.info(f"Статус: {response.status}")
-                    logger.debug(f"Ответ: {text[:500]}")
+                    logger.info(f"ОТВЕТ PLANFIX: {text}")
                     
                     if response.status == 200:
                         root = ET.fromstring(text)
@@ -87,6 +85,7 @@ class PlanfixClient:
                         if status == 'ok':
                             task_id = root.findtext('.//task/id')
                             task_general = root.findtext('.//task/general')
+                            logger.info(f"✅ Задача создана! ID: {task_id}, General: {task_general}")
                             return {
                                 "success": True,
                                 "id": task_id,
@@ -96,17 +95,19 @@ class PlanfixClient:
                         else:
                             error_code = root.findtext('.//code', 'Unknown')
                             error_msg = root.findtext('.//message', 'No message')
+                            logger.error(f"❌ API ошибка: {error_code} - {error_msg}")
                             return {
                                 "success": False,
                                 "error": f"API error {error_code}: {error_msg}"
                             }
                     else:
+                        logger.error(f"❌ HTTP ошибка: {response.status} - {text[:500]}")
                         return {
                             "success": False,
                             "error": f"HTTP {response.status}: {text[:200]}"
                         }
         except Exception as e:
-            logger.error(f"Ошибка: {e}")
+            logger.error(f"❌ Исключение: {e}")
             return {"success": False, "error": str(e)}
     
     def _escape_xml(self, text: str) -> str:
