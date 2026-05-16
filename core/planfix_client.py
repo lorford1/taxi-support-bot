@@ -29,14 +29,11 @@ class PlanfixClient:
         description: str = "",
         client_id: Optional[int] = None,
         assignee_id: Optional[int] = None,
-        importance: int = 1,  # Параметр оставлен для совместимости, но НЕ используется
         start_date: str = None,
         end_date: str = None,
-        status_id: int = 1
     ) -> Dict[str, Any]:
         """
-        Создание задачи через XML API Planfix
-        Задача отображается в Планировщике (календаре)
+        Создание задачи в Планировщике Planfix
         """
         from datetime import datetime, timedelta
         
@@ -50,36 +47,15 @@ class PlanfixClient:
         title = self._escape_xml(title)
         description = self._escape_xml(description)
         
-        # Формируем блок исполнителя (если указан)
-        assignee_xml = ""
-        if assignee_id is not None:
-            assignee_xml = f'<assignee id="{assignee_id}"/>'
-        
-        # Формируем XML запрос (БЕЗ importance!)
+        # Формируем XML запрос (минимальный набор полей)
         xml_body = f'''<?xml version="1.0" encoding="UTF-8"?>
 <request method="task.add">
     <account>{self.account}</account>
     <task>
         <title>{title}</title>
         <description>{description}</description>
-        
-        <!-- ПОЛЯ ДЛЯ ОТОБРАЖЕНИЯ В ПЛАНИРОВЩИКЕ -->
-        <startDateIsSet>1</startDateIsSet>
         <startDate>{start_date}</startDate>
-        <startTimeIsSet>1</startTimeIsSet>
-        <startTime>09:00:00</startTime>
-        
-        <endDateIsSet>1</endDateIsSet>
         <endDate>{end_date}</endDate>
-        <endTimeIsSet>1</endTimeIsSet>
-        <endTime>18:00:00</endTime>
-        
-        <durationIsSet>1</durationIsSet>
-        <duration>480</duration>
-        <durationUnit>0</durationUnit>
-        
-        <!-- НАЗНАЧАЕМ ИСПОЛНИТЕЛЯ -->
-        {assignee_xml}
     </task>
 </request>'''
         
@@ -89,7 +65,7 @@ class PlanfixClient:
         }
         
         logger.info(f"📤 Создаем задачу в Planfix: {title}")
-        logger.debug(f"📋 XML запрос: {xml_body}")
+        logger.info(f"📋 XML запрос: {xml_body}")
         
         try:
             async with aiohttp.ClientSession() as session:
@@ -110,7 +86,7 @@ class PlanfixClient:
                         if status == 'ok':
                             task_id = root.findtext('.//task/id')
                             task_general = root.findtext('.//task/general')
-                            logger.info(f"✅ Задача успешно создана! ID: {task_id}, General: {task_general}")
+                            logger.info(f"✅ Задача создана! ID: {task_id}, General: {task_general}")
                             return {
                                 "success": True,
                                 "id": task_id,
@@ -132,7 +108,7 @@ class PlanfixClient:
                             "error": f"HTTP {response.status}: {text[:200]}"
                         }
         except Exception as e:
-            logger.error(f"❌ Исключение при запросе: {e}")
+            logger.error(f"❌ Исключение: {e}")
             return {"success": False, "error": str(e)}
     
     def _escape_xml(self, text: str) -> str:
@@ -178,7 +154,7 @@ class PlanfixClient:
                 ) as response:
                     return response.status == 200
         except Exception as e:
-            logger.error(f"Ошибка добавления комментария: {e}")
+            logger.error(f"Ошибка комментария: {e}")
             return False
     
     async def find_contact_by_phone(self, phone: str) -> Optional[Dict]:
@@ -222,48 +198,7 @@ class PlanfixClient:
                                 "name": contact.findtext('name')
                             }
         except Exception as e:
-            logger.error(f"Ошибка поиска контакта: {e}")
-        
-        return None
-    
-    async def get_user_id_by_name(self, name: str) -> Optional[int]:
-        """Поиск ID пользователя по имени (ФИО)"""
-        name = self._escape_xml(name)
-        
-        xml_body = f'''<?xml version="1.0" encoding="UTF-8"?>
-<request method="user.getList">
-    <account>{self.account}</account>
-    <filters>
-        <filter>
-            <type>1</type>
-            <operator>contains</operator>
-            <value>{name}</value>
-        </filter>
-    </filters>
-    <pageSize>1</pageSize>
-</request>'''
-        
-        headers = {
-            'Content-Type': 'application/xml',
-            'Accept': 'application/xml'
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.url,
-                    data=xml_body.encode('utf-8'),
-                    headers=headers,
-                    auth=self.auth
-                ) as response:
-                    if response.status == 200:
-                        text = await response.text()
-                        root = ET.fromstring(text)
-                        user = root.find('.//user')
-                        if user is not None:
-                            return int(user.findtext('id', 0))
-        except Exception as e:
-            logger.error(f"Ошибка поиска пользователя: {e}")
+            logger.error(f"Ошибка поиска: {e}")
         
         return None
 
