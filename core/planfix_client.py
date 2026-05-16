@@ -29,18 +29,14 @@ class PlanfixClient:
         description: str = "",
         client_id: Optional[int] = None,
         assignee_id: Optional[int] = None,
-        importance: int = 1,
+        importance: int = 1,  # Параметр оставлен для совместимости, но НЕ используется
         start_date: str = None,
         end_date: str = None,
-        status_id: int = 1  # Статус задачи (1 = обычная/в работе)
+        status_id: int = 1
     ) -> Dict[str, Any]:
         """
         Создание задачи через XML API Planfix
         Задача отображается в Планировщике (календаре)
-        
-        Параметры:
-            status_id: 1 - обычная, 2 - важная, 3 - очень важная
-            assignee_id: ID сотрудника в Planfix (исполнитель)
         """
         from datetime import datetime, timedelta
         
@@ -59,17 +55,13 @@ class PlanfixClient:
         if assignee_id is not None:
             assignee_xml = f'<assignee id="{assignee_id}"/>'
         
-        # Формируем XML запрос с ПОЛНЫМИ данными для планировщика
+        # Формируем XML запрос (БЕЗ importance!)
         xml_body = f'''<?xml version="1.0" encoding="UTF-8"?>
 <request method="task.add">
     <account>{self.account}</account>
     <task>
         <title>{title}</title>
         <description>{description}</description>
-        
-        <!-- ОСНОВНЫЕ ПОЛЯ -->
-        <importance>{importance}</importance>
-        <status>{status_id}</status>
         
         <!-- ПОЛЯ ДЛЯ ОТОБРАЖЕНИЯ В ПЛАНИРОВЩИКЕ -->
         <startDateIsSet>1</startDateIsSet>
@@ -88,9 +80,6 @@ class PlanfixClient:
         
         <!-- НАЗНАЧАЕМ ИСПОЛНИТЕЛЯ -->
         {assignee_xml}
-        
-        <!-- ПРИВЯЗКА К КЛИЕНТУ/КОНТАКТУ (если есть) -->
-        <client id="{client_id}" />'
     </task>
 </request>'''
         
