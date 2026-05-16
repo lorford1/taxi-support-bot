@@ -1,65 +1,28 @@
-from aiogram import Router, F
-from aiogram.filters import Command, StateFilter
-from aiogram.types import Message, ReplyKeyboardRemove
-from aiogram.enums import ParseMode
-from aiogram.fsm.context import FSMContext
-
-from bot.keyboards.menu import (
-    get_main_keyboard,
-    get_fuel_card_keyboard,
-    get_payments_keyboard,
-    get_access_keyboard,
-    get_support_keyboard
-)
-from bot.handlers.registration import (
-    router as registration_router,
-    get_registered_keyboard,
-    get_unregistered_keyboard
-)
-from core.planfix_client import planfix
-
-router = Router()
-
-# Подключаем роутер регистрации
-router.include_router(registration_router)
-
-# База ответов (можно расширить)
-ANSWERS = {
-    "разблокировать карту": "🔓 Хорошо, {name}, я создал заявку на разблокировку вашей топливной карты.\n\nНомер заявки: #{}\n\n⏱️ Обычно занимает до 30 минут.",
-    # ... остальные ответы
-}
+from storage.user_storage import user_storage
 
 
-@router.message(F.text == "🔓 Разблокировать карту")
-async def unblock_card(message: Message, state: FSMContext):
-    """Разблокировка карты с привязкой к водителю"""
-    user_data = await state.get_data()
+@router.message(F.text == "⛽ Топливная карта")
+async def fuel_card_category(message: Message, state: FSMContext):
+    """Категория топливной карты с проверкой регистрации"""
+    telegram_id = str(message.from_user.id)
+    user = user_storage.get_user(telegram_id)
     
-    if not user_data.get("registered"):
-        await message.answer("❌ Сначала зарегистрируйтесь (кнопка 📝 Зарегистрироваться)")
+    if not user:
+        await message.answer(
+            "❌ Для использования бота необходимо сначала зарегистрироваться.\n\n"
+            "Нажмите на кнопку <b>📝 Зарегистрироваться</b>.",
+            parse_mode="HTML",
+            reply_markup=get_unregistered_keyboard()
+        )
         return
     
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
-    
-    result = await planfix.create_task(
-        title=f"⛽ Разблокировка карты: {driver_name} (ID: {driver_id})",
-        description=f"""
-Запрос на разблокировку топливной карты
-
-👤 Водитель: {driver_name}
-🆔 ID: {driver_id}
-📅 Время: {message.date}
-        """
+    await message.answer(
+        f"⛽ <b>Выберите проблему с топливной картой</b>\n\n"
+        f"👤 Водитель: {user.get('fullname')}\n"
+        f"🆔 ID: {user.get('driver_id')}\n\n"
+        "• Разблокировать карту\n"
+        "• Обновить лимит\n"
+        "• Не работает на заправке\n"
+        "• Заказать новую карту",
+        parse_mode="HTML"
     )
-    
-    if result.get("success"):
-        await message.answer(
-            ANSWERS["разблокировать карту"].format(driver_name, result.get('general')),
-            parse_mode=ParseMode.HTML
-        )
-    else:
-        await message.answer("⛽ Создал заявку на разблокировку. Специалист свяжется с вами.")
-
-
-# Аналогично обновите другие обработчики

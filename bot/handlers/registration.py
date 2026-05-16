@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
-from core.planfix_client import planfix
+from storage.user_storage import user_storage
 
 router = Router()
 
@@ -16,7 +16,6 @@ class RegistrationStates(StatesGroup):
 
 # Клавиатура после регистрации
 def get_registered_keyboard():
-    """Клавиатура для зарегистрированного пользователя"""
     buttons = [
         [KeyboardButton(text="⛽ Топливная карта")],
         [KeyboardButton(text="💵 Выплаты и зарплата")],
@@ -29,9 +28,7 @@ def get_registered_keyboard():
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-# Клавиатура для незарегистрированного пользователя
 def get_unregistered_keyboard():
-    """Клавиатура для незарегистрированного пользователя"""
     buttons = [
         [KeyboardButton(text="📝 Зарегистрироваться")],
         [KeyboardButton(text="❓ Помощь")]
@@ -42,17 +39,25 @@ def get_unregistered_keyboard():
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     """Обработка команды /start"""
-    # Проверяем, зарегистрирован ли пользователь
-    user_data = await state.get_data()
+    telegram_id = str(message.from_user.id)
     
-    if user_data.get("registered"):
+    # Проверяем в постоянном хранилище
+    user = user_storage.get_user(telegram_id)
+    
+    if user:
         # Уже зарегистрирован
         await message.answer(
-            f"🚕 <b>С возвращением, {user_data.get('fullname')}!</b>\n\n"
-            f"🆔 Ваш ID: {user_data.get('driver_id')}\n\n"
+            f"🚕 <b>С возвращением, {user.get('fullname')}!</b>\n\n"
+            f"🆔 Ваш ID: <code>{user.get('driver_id')}</code>\n\n"
             f"Выберите категорию проблемы на кнопках ниже.",
             parse_mode="HTML",
             reply_markup=get_registered_keyboard()
+        )
+        # Сохраняем в FSM для текущей сессии
+        await state.update_data(
+            driver_id=user.get('driver_id'),
+            fullname=user.get('fullname'),
+            registered=True
         )
     else:
         # Не зарегистрирован
@@ -64,11 +69,11 @@ async def cmd_start(message: Message, state: FSMContext):
             parse_mode="HTML",
             reply_markup=get_unregistered_keyboard()
         )
+        await state.clear()
 
 
 @router.message(F.text == "📝 Зарегистрироваться")
 async def start_registration(message: Message, state: FSMContext):
-    """Начало процесса регистрации"""
     await message.answer(
         "📝 <b>Регистрация водителя</b>\n\n"
         "Пожалуйста, введите ваш <b>ID</b> (номер водителя в системе).\n\n"
@@ -82,10 +87,8 @@ async def start_registration(message: Message, state: FSMContext):
 
 @router.message(RegistrationStates.waiting_for_id)
 async def process_id(message: Message, state: FSMContext):
-    """Обработка ID водителя"""
     driver_id = message.text.strip()
     
-    # Проверяем, что ID состоит из цифр
     if not driver_id.isdigit():
         await message.answer(
             "❌ <b>Неверный формат ID</b>\n\n"
@@ -95,7 +98,6 @@ async def process_id(message: Message, state: FSMContext):
         )
         return
     
-    # Сохраняем ID
     await state.update_data(driver_id=driver_id)
     
     await message.answer(
@@ -109,10 +111,8 @@ async def process_id(message: Message, state: FSMContext):
 
 @router.message(RegistrationStates.waiting_for_fullname)
 async def process_fullname(message: Message, state: FSMContext):
-    """Обработка ФИО водителя"""
     fullname = message.text.strip()
     
-    # Простая проверка: должно быть минимум 2 слова
     if len(fullname.split()) < 2:
         await message.answer(
             "❌ <b>Неверный формат ФИО</b>\n\n"
@@ -122,18 +122,25 @@ async def process_fullname(message: Message, state: FSMContext):
         )
         return
     
-    # Получаем сохранённый ID
     user_data = await state.get_data()
     driver_id = user_data.get("driver_id")
+    telegram_id = str(message.from_user.id)
     
-    # Сохраняем данные
+    # Сохраняем в постоянное хранилище
+    user_storage.save_user(telegram_id, {
+        "driver_id": driver_id,
+        "fullname": fullname,
+        "telegram_id": telegram_id,
+        "telegram_name": message.from_user.full_name,
+        "registered_at": message.date.isoformat()
+    })
+    
+    # Сохраняем в FSM
     await state.update_data(
+        driver_id=driver_id,
         fullname=fullname,
         registered=True
     )
-    
-    # Можно также проверить водителя в Planfix (опционально)
-    # contact = await planfix.find_contact_by_name(fullname)
     
     await message.answer(
         "✅ <b>Регистрация успешно завершена!</b>\n\n"
@@ -144,21 +151,19 @@ async def process_fullname(message: Message, state: FSMContext):
         parse_mode="HTML",
         reply_markup=get_registered_keyboard()
     )
-    
-    await state.clear()
 
 
 @router.message(F.text == "🆔 Мой профиль")
 async def show_profile(message: Message, state: FSMContext):
-    """Показать профиль водителя"""
-    user_data = await state.get_data()
+    telegram_id = str(message.from_user.id)
+    user = user_storage.get_user(telegram_id)
     
-    if user_data.get("registered"):
+    if user:
         await message.answer(
             "📋 <b>Ваш профиль</b>\n\n"
-            f"🆔 <b>ID:</b> <code>{user_data.get('driver_id')}</code>\n"
-            f"👤 <b>ФИО:</b> {user_data.get('fullname')}\n"
-            f"📅 <b>Дата регистрации:</b> {message.date.strftime('%d.%m.%Y')}\n\n"
+            f"🆔 <b>ID:</b> <code>{user.get('driver_id')}</code>\n"
+            f"👤 <b>ФИО:</b> {user.get('fullname')}\n"
+            f"📅 <b>Дата регистрации:</b> {user.get('registered_at', 'неизвестно')[:10]}\n\n"
             "Если данные неверны, обратитесь к оператору.",
             parse_mode="HTML",
             reply_markup=get_registered_keyboard()
@@ -174,38 +179,10 @@ async def show_profile(message: Message, state: FSMContext):
 
 @router.message(Command("cancel"))
 async def cancel_registration(message: Message, state: FSMContext):
-    """Отмена регистрации"""
     await state.clear()
     await message.answer(
         "❌ Регистрация отменена.\n\n"
         "Вы можете начать заново, нажав на кнопку <b>📝 Зарегистрироваться</b>.",
         parse_mode="HTML",
         reply_markup=get_unregistered_keyboard()
-    )
-
-
-# Обновляем обработчик проблем, чтобы использовать данные водителя
-@router.message(F.text == "⛽ Топливная карта")
-async def fuel_card_category(message: Message, state: FSMContext):
-    """Категория топливной карты с идентификацией"""
-    user_data = await state.get_data()
-    
-    if not user_data.get("registered"):
-        await message.answer(
-            "❌ Для использования бота необходимо сначала зарегистрироваться.\n\n"
-            "Нажмите на кнопку <b>📝 Зарегистрироваться</b>.",
-            parse_mode="HTML",
-            reply_markup=get_unregistered_keyboard()
-        )
-        return
-    
-    await message.answer(
-        f"⛽ <b>Выберите проблему с топливной картой</b>\n\n"
-        f"👤 Водитель: {user_data.get('fullname')}\n"
-        f"🆔 ID: {user_data.get('driver_id')}\n\n"
-        "• Разблокировать карту\n"
-        "• Обновить лимит\n"
-        "• Не работает на заправке\n"
-        "• Заказать новую карту",
-        parse_mode="HTML"
     )
