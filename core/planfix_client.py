@@ -31,12 +31,19 @@ class PlanfixClient:
         assignee_id: Optional[int] = None,
         importance: int = 1,
         start_date: str = None,
-        end_date: str = None
+        end_date: str = None,
+        status_id: int = 1  # Статус задачи (1 = обычная/в работе)
     ) -> Dict[str, Any]:
         """
         Создание задачи через XML API Planfix
         Задача отображается в Планировщике (календаре)
+        
+        Параметры:
+            status_id: 1 - обычная, 2 - важная, 3 - очень важная
+            assignee_id: ID сотрудника в Planfix (исполнитель)
         """
+        from datetime import datetime, timedelta
+        
         # Если даты не указаны — ставим сегодня и завтра
         if start_date is None:
             start_date = datetime.now().strftime("%Y-%m-%d")
@@ -47,6 +54,11 @@ class PlanfixClient:
         title = self._escape_xml(title)
         description = self._escape_xml(description)
         
+        # Формируем блок исполнителя (если указан)
+        assignee_xml = ""
+        if assignee_id is not None:
+            assignee_xml = f'<assignee id="{assignee_id}"/>'
+        
         # Формируем XML запрос с ПОЛНЫМИ данными для планировщика
         xml_body = f'''<?xml version="1.0" encoding="UTF-8"?>
 <request method="task.add">
@@ -54,6 +66,10 @@ class PlanfixClient:
     <task>
         <title>{title}</title>
         <description>{description}</description>
+        
+        <!-- ОСНОВНЫЕ ПОЛЯ -->
+        <importance>{importance}</importance>
+        <status>{status_id}</status>
         
         <!-- ПОЛЯ ДЛЯ ОТОБРАЖЕНИЯ В ПЛАНИРОВЩИКЕ -->
         <startDateIsSet>1</startDateIsSet>
@@ -69,6 +85,12 @@ class PlanfixClient:
         <durationIsSet>1</durationIsSet>
         <duration>480</duration>
         <durationUnit>0</durationUnit>
+        
+        <!-- НАЗНАЧАЕМ ИСПОЛНИТЕЛЯ -->
+        {assignee_xml}
+        
+        <!-- ПРИВЯЗКА К КЛИЕНТУ/КОНТАКТУ (если есть) -->
+        <client id="{client_id}" />'
     </task>
 </request>'''
         
@@ -212,6 +234,47 @@ class PlanfixClient:
                             }
         except Exception as e:
             logger.error(f"Ошибка поиска контакта: {e}")
+        
+        return None
+    
+    async def get_user_id_by_name(self, name: str) -> Optional[int]:
+        """Поиск ID пользователя по имени (ФИО)"""
+        name = self._escape_xml(name)
+        
+        xml_body = f'''<?xml version="1.0" encoding="UTF-8"?>
+<request method="user.getList">
+    <account>{self.account}</account>
+    <filters>
+        <filter>
+            <type>1</type>
+            <operator>contains</operator>
+            <value>{name}</value>
+        </filter>
+    </filters>
+    <pageSize>1</pageSize>
+</request>'''
+        
+        headers = {
+            'Content-Type': 'application/xml',
+            'Accept': 'application/xml'
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.url,
+                    data=xml_body.encode('utf-8'),
+                    headers=headers,
+                    auth=self.auth
+                ) as response:
+                    if response.status == 200:
+                        text = await response.text()
+                        root = ET.fromstring(text)
+                        user = root.find('.//user')
+                        if user is not None:
+                            return int(user.findtext('id', 0))
+        except Exception as e:
+            logger.error(f"Ошибка поиска пользователя: {e}")
         
         return None
 
