@@ -2,6 +2,7 @@ import aiohttp
 import logging
 import xml.etree.ElementTree as ET
 from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
 
 from core.config import settings
 
@@ -28,22 +29,47 @@ class PlanfixClient:
         description: str = "",
         client_id: Optional[int] = None,
         assignee_id: Optional[int] = None,
-        importance: int = 1  # Параметр оставлен для совместимости, но не используется
+        importance: int = 1,
+        # Параметры для Планировщика
+        start_date: str = None,
+        end_date: str = None,
+        start_time: str = "09:00:00",
+        end_time: str = "18:00:00"
     ) -> Dict[str, Any]:
         """
         Создание задачи через XML API Planfix
+        Если указаны start_date/end_date — задача появится в Планировщике
         """
+        # Если даты не указаны — ставим сегодня и завтра
+        if start_date is None:
+            start_date = datetime.now().strftime("%Y-%m-%d")
+        if end_date is None:
+            end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        
         # Экранируем спецсимволы для XML
         title = self._escape_xml(title)
         description = self._escape_xml(description)
         
-        # Формируем XML запрос (без поля importance, так как оно вызывает ошибку 0015)
+        # Формируем XML запрос (с полями для Планировщика)
         xml_body = f'''<?xml version="1.0" encoding="UTF-8"?>
 <request method="task.add">
     <account>{self.account}</account>
     <task>
         <title>{title}</title>
         <description>{description}</description>
+        <importance>{importance}</importance>
+        <!-- 👇 ПОЛЯ ДЛЯ ОТОБРАЖЕНИЯ В ПЛАНИРОВЩИКЕ 👇 -->
+        <startDateIsSet>1</startDateIsSet>
+        <startDate>{start_date}</startDate>
+        <startTimeIsSet>1</startTimeIsSet>
+        <startTime>{start_time}</startTime>
+        <endDateIsSet>1</endDateIsSet>
+        <endDate>{end_date}</endDate>
+        <endTimeIsSet>1</endTimeIsSet>
+        <endTime>{end_time}</endTime>
+        <durationIsSet>1</durationIsSet>
+        <duration>480</duration>
+        <durationUnit>0</durationUnit>
     </task>
 </request>'''
         
@@ -53,7 +79,7 @@ class PlanfixClient:
         }
         
         logger.info(f"Создаем задачу в Planfix: {title}")
-        logger.debug(f"XML запрос: {xml_body[:300]}...")
+        logger.debug(f"XML запрос: {xml_body[:500]}...")
         
         try:
             async with aiohttp.ClientSession() as session:
@@ -187,4 +213,5 @@ class PlanfixClient:
         
         return None
 
+# Создаем глобальный экземпляр
 planfix = PlanfixClient()
