@@ -29,11 +29,21 @@ class PlanfixClient:
         description: str = "",
         client_id: Optional[int] = None,
         assignee_id: Optional[int] = None,
+        project_id: Optional[int] = None,
         start_date: str = None,
         end_date: str = None,
     ) -> Dict[str, Any]:
         """
         Создание задачи в Планировщике Planfix
+        
+        Параметры:
+            title: Название задачи
+            description: Описание задачи
+            client_id: ID контрагента (опционально)
+            assignee_id: ID исполнителя (сотрудника Planfix)
+            project_id: ID проекта (опционально)
+            start_date: Дата начала (ГГГГ-ММ-ДД)
+            end_date: Дата окончания (ГГГГ-ММ-ДД)
         """
         from datetime import datetime, timedelta
         
@@ -47,7 +57,22 @@ class PlanfixClient:
         title = self._escape_xml(title)
         description = self._escape_xml(description)
         
-        # Формируем XML запрос (минимальный набор полей)
+        # Формируем блок исполнителя (если указан)
+        assignee_xml = ""
+        if assignee_id is not None:
+            assignee_xml = f'<assignee id="{assignee_id}"/>'
+        
+        # Формируем блок проекта (если указан)
+        project_xml = ""
+        if project_id is not None:
+            project_xml = f'<project id="{project_id}"/>'
+        
+        # Формируем блок клиента (если указан)
+        client_xml = ""
+        if client_id is not None:
+            client_xml = f'<client id="{client_id}"/>'
+        
+        # Формируем XML запрос
         xml_body = f'''<?xml version="1.0" encoding="UTF-8"?>
 <request method="task.add">
     <account>{self.account}</account>
@@ -56,6 +81,9 @@ class PlanfixClient:
         <description>{description}</description>
         <startDate>{start_date}</startDate>
         <endDate>{end_date}</endDate>
+        {assignee_xml}
+        {project_xml}
+        {client_xml}
     </task>
 </request>'''
         

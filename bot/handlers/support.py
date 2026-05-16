@@ -17,6 +17,10 @@ from core.planfix_client import planfix
 # Создаём роутер
 router = Router()
 
+# ID исполнителя в Planfix (сотрудник, которому назначаются задачи)
+# 🔧 ЗДЕСЬ УКАЖИТЕ ID СОТРУДНИКА ИЗ PLANFIX
+PLANFIX_ASSIGNEE_ID = 123  # ← Замените на реальный ID сотрудника (например, Стельмах Дмитрий)
+
 
 # ============ КЛАВИАТУРЫ ДЛЯ РЕГИСТРАЦИИ ============
 
@@ -133,7 +137,7 @@ async def cmd_help(message: Message):
     await message.answer(
         "📋 <b>Как пользоваться ботом:</b>\n\n"
         "1️⃣ Нажмите на категорию проблемы\n"
-        "2️⃣ Выберите конкретую проблему\n"
+        "2️⃣ Выберите конкретную проблему\n"
         "3️⃣ Бот создаст заявку и даст ответ\n\n"
         "<b>Команды:</b>\n"
         "/start — главное меню\n"
@@ -168,7 +172,7 @@ async def call_operator(message: Message, state: FSMContext):
     status_msg = await message.answer("🔄 Создаю заявку оператору...")
     
     result = await planfix.create_task(
-        title=f"🚨 Срочный вызов оператора: {driver_name}",
+        title=f"🚨 Срочный вызов оператора: {driver_name} (ID: {driver_id})",
         description=f"""
 Пользователь запросил соединение с оператором.
 
@@ -177,7 +181,8 @@ async def call_operator(message: Message, state: FSMContext):
 📅 Время: {message.date}
 🆔 Telegram ID: {message.from_user.id}
 👥 Username: @{message.from_user.username or 'не указан'}
-        """
+        """,
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -187,7 +192,7 @@ async def call_operator(message: Message, state: FSMContext):
             f"👨‍💼 <b>Соединяю с оператором...</b>\n\n"
             f"✅ Создана заявка №{result.get('general')}\n\n"
             f"Специалист свяжется с вами в ближайшее время.\n\n"
-            f"Пожалуйста, опишите вашу проблему подробнее.",
+            f"📅 Задача появится в Планировщике.",
             parse_mode="HTML"
         )
     else:
@@ -241,7 +246,8 @@ async def unblock_card(message: Message, state: FSMContext):
 🆔 ID: {driver_id}
 📅 Время: {message.date}
 📱 Telegram ID: {message.from_user.id}
-        """
+        """,
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -275,7 +281,8 @@ async def update_limit(message: Message, state: FSMContext):
     
     result = await planfix.create_task(
         title=f"📈 Обновление лимита: {driver_name}",
-        description=f"Запрос на обновление лимита топливной карты\nВодитель: {driver_name}"
+        description=f"Запрос на обновление лимита топливной карты\nВодитель: {driver_name}",
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -284,7 +291,8 @@ async def update_limit(message: Message, state: FSMContext):
         await message.answer(
             f"📈 <b>Хорошо, {driver_name}!</b>\n\n"
             f"✅ Создана заявка на обновление лимита. Номер: #{result.get('general')}\n\n"
-            f"⛽ Лимит будет обновлён в ближайшее время.",
+            f"⛽ Лимит будет обновлён в ближайшее время.\n\n"
+            f"📅 Задача появится в Планировщике.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
@@ -304,7 +312,8 @@ async def card_not_working(message: Message, state: FSMContext):
     
     result = await planfix.create_task(
         title=f"⛽ Проблема на заправке: {driver_name}",
-        description=f"Водитель сообщает, что карта не работает на заправке\nВодитель: {driver_name}"
+        description=f"Водитель сообщает, что карта не работает на заправке\nВодитель: {driver_name}",
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -314,7 +323,7 @@ async def card_not_working(message: Message, state: FSMContext):
             f"⛽ <b>Понимаю вашу ситуацию, {driver_name}!</b>\n\n"
             f"✅ Создана заявка в техподдержку. Номер: #{result.get('general')}\n\n"
             f"🛠️ Специалист проверит статус вашей карты.\n\n"
-            f"💡 Попробуйте перезагрузить приложение BNCard.",
+            f"📅 Задача появится в Планировщике.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
@@ -385,7 +394,8 @@ async def where_is_money(message: Message, state: FSMContext):
     
     result = await planfix.create_task(
         title=f"💰 Проверка выплаты: {driver_name}",
-        description=f"Запрос на проверку статуса выплаты\nВодитель: {driver_name}"
+        description=f"Запрос на проверку статуса выплаты\nВодитель: {driver_name}",
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -412,7 +422,8 @@ async def increase_quota(message: Message, state: FSMContext):
     
     result = await planfix.create_task(
         title=f"📈 Увеличение квоты: {driver_name}",
-        description=f"Запрос на увеличение квоты вывода средств\nВодитель: {driver_name}"
+        description=f"Запрос на увеличение квоты вывода средств\nВодитель: {driver_name}",
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -439,7 +450,8 @@ async def wrong_details(message: Message, state: FSMContext):
     
     result = await planfix.create_task(
         title=f"💳 Ошибка в реквизитах: {driver_name}",
-        description=f"Запрос на проверку реквизитов карты\nВодитель: {driver_name}"
+        description=f"Запрос на проверку реквизитов карты\nВодитель: {driver_name}",
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -488,7 +500,8 @@ async def open_access(message: Message, state: FSMContext):
     
     result = await planfix.create_task(
         title=f"🔐 Запрос доступа: {driver_name} (ID: {driver_id})",
-        description=f"Запрос на открытие доступа к сайту\nВодитель: {driver_name}\nID: {driver_id}"
+        description=f"Запрос на открытие доступа к сайту\nВодитель: {driver_name}\nID: {driver_id}",
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -564,7 +577,8 @@ async def app_problem(message: Message, state: FSMContext):
     
     result = await planfix.create_task(
         title=f"📱 Проблема с приложением: {driver_name}",
-        description=f"Запрос о проблеме с приложением Яндекс Про\nВодитель: {driver_name}"
+        description=f"Запрос о проблеме с приложением Яндекс Про\nВодитель: {driver_name}",
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -591,7 +605,8 @@ async def no_orders(message: Message, state: FSMContext):
     
     result = await planfix.create_task(
         title=f"🚫 Нет заказов: {driver_name}",
-        description=f"Запрос о проблеме отсутствия заказов\nВодитель: {driver_name}"
+        description=f"Запрос о проблеме отсутствия заказов\nВодитель: {driver_name}",
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
@@ -618,7 +633,8 @@ async def rating_dropped(message: Message, state: FSMContext):
     
     result = await planfix.create_task(
         title=f"⭐ Вопрос по рейтингу: {driver_name}",
-        description=f"Запрос о падении рейтинга водителя\nВодитель: {driver_name}"
+        description=f"Запрос о падении рейтинга водителя\nВодитель: {driver_name}",
+        assignee_id=PLANFIX_ASSIGNEE_ID
     )
     
     await status_msg.delete()
