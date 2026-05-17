@@ -15,6 +15,7 @@ from bot.keyboards.menu import (
     get_support_keyboard
 )
 from storage.user_storage import user_storage
+from core.llm_intent import llm_classifier
 
 # Создаём роутер
 router = Router()
@@ -117,9 +118,7 @@ async def urgent_operator_process(message: Message, state: FSMContext):
     
     today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # НАЗВАНИЕ ЗАДАЧИ С ID И ФИО
     title = f"🚨 СРОЧНЫЙ ВЫЗОВ ОПЕРАТОРА: {driver_name} (ID: {driver_id})"
-    
     description = f"""
 🚨 СРОЧНОЕ ОБРАЩЕНИЕ ВОДИТЕЛЯ
 
@@ -179,7 +178,7 @@ async def cancel_urgent(message: Message, state: FSMContext):
         )
 
 
-# ============ ОСТАЛЬНЫЕ ОБРАБОТЧИКИ ============
+# ============ ОСНОВНЫЕ КОМАНДЫ ============
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -191,7 +190,8 @@ async def cmd_start(message: Message, state: FSMContext):
             f"🚕 <b>С возвращением, {user.get('fullname')}!</b>\n\n"
             f"🆔 Ваш ID: <code>{user.get('driver_id')}</code>\n\n"
             f"Выберите категорию проблемы на кнопках ниже.\n\n"
-            f"📌 <b>Для срочного вызова оператора</b> нажмите '🆘 Оператор срочно'",
+            f"💡 <b>Совет:</b> Вы можете просто написать проблему словами,\n"
+            f"и я постараюсь помочь или создам заявку.",
             parse_mode="HTML",
             reply_markup=get_main_keyboard()
         )
@@ -218,8 +218,10 @@ async def cmd_help(message: Message):
         "1️⃣ Нажмите на категорию проблемы\n"
         "2️⃣ Выберите конкретную проблему\n"
         "3️⃣ Бот создаст заявку и даст ответ\n\n"
+        "<b>Или просто напишите проблему словами!</b>\n"
+        "Например: 'У меня не пришли деньги на карту'\n\n"
         "<b>Срочный вызов оператора:</b>\n"
-        "🆘 Нажмите 'Оператор срочно' → напишите сообщение → оператор свяжется с вами\n\n"
+        "🆘 Нажмите 'Оператор срочно' → напишите сообщение\n\n"
         "<b>Команды:</b>\n"
         "/start — главное меню\n"
         "/help — эта справка\n"
@@ -231,7 +233,7 @@ async def cmd_help(message: Message):
 @router.message(F.text == "◀️ Назад")
 async def back_to_main(message: Message):
     await message.answer(
-        "🏠 <b>Главное меню</b>\n\nВыберите категорию:",
+        "🏠 <b>Главное меню</b>\n\nВыберите категорию или напишите проблему:",
         parse_mode="HTML",
         reply_markup=get_main_keyboard()
     )
@@ -274,7 +276,7 @@ async def call_operator(message: Message, state: FSMContext):
     else:
         await message.answer(
             f"❌ <b>Ошибка при создании заявки!</b>\n\n"
-            f"Пожалуйста, обратитесь к оператору напрямую.",
+            f"Пожалуйста, нажмите '🆘 Оператор срочно'.",
             parse_mode="HTML"
         )
 
@@ -298,7 +300,8 @@ async def fuel_card_category(message: Message, state: FSMContext):
         "• 🔓 Разблокировать карту\n"
         "• 📈 Обновить лимит\n"
         "• ⛽ Не работает на заправке\n"
-        "• 🆕 Заказать новую карту",
+        "• 🆕 Заказать новую карту\n\n"
+        "💡 <b>Или просто напишите проблему</b> — я пойму!",
         parse_mode="HTML",
         reply_markup=get_fuel_card_keyboard()
     )
@@ -319,7 +322,6 @@ async def unblock_card(message: Message, state: FSMContext):
 👤 Водитель: {driver_name}
 🆔 ID: {driver_id}
 📅 Время: {message.date}
-📱 Telegram ID: {message.from_user.id}
     """
     
     success = await create_task_via_webhook(title, description)
@@ -330,14 +332,15 @@ async def unblock_card(message: Message, state: FSMContext):
         await message.answer(
             f"🔓 <b>Хорошо, {driver_name}!</b>\n\n"
             f"✅ Заявка создана в Planfix!\n\n"
-            f"👨‍💼 Специалист свяжется с вами.",
+            f"👨‍💼 Специалист свяжется с вами.\n\n"
+            f"💡 <b>Если ситуация срочная</b> — нажмите '🆘 Оператор срочно'",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
     else:
         await message.answer(
             f"❌ <b>Ошибка при создании заявки!</b>\n\n"
-            f"Пожалуйста, нажмите '🆘 Оператор срочно' для экстренной связи.",
+            f"Пожалуйста, нажмите '🆘 Оператор срочно'.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
@@ -368,7 +371,7 @@ async def update_limit(message: Message, state: FSMContext):
         )
     else:
         await message.answer(
-            f"❌ Ошибка при создании заявки. Нажмите '🆘 Оператор срочно'.",
+            f"❌ Ошибка. Нажмите '🆘 Оператор срочно'.",
             reply_markup=get_fuel_card_keyboard()
         )
 
@@ -438,7 +441,8 @@ async def payments_category(message: Message, state: FSMContext):
         "• 💰 Вывести деньги на карту\n"
         "• ❓ Где мои деньги?\n"
         "• 📈 Увеличить квоту\n"
-        "• 💳 Ошибка в реквизитах",
+        "• 💳 Ошибка в реквизитах\n\n"
+        "💡 <b>Или просто напишите</b> — я помогу!",
         parse_mode="HTML",
         reply_markup=get_payments_keyboard()
     )
@@ -572,7 +576,8 @@ async def access_category(message: Message, state: FSMContext):
         f"👤 Водитель: {user_data.get('fullname')}\n\n"
         "• 🔓 Открыть доступ\n"
         "• 📝 Зарегистрироваться на сайте\n"
-        "• 🔄 Восстановить пароль",
+        "• 🔄 Восстановить пароль\n\n"
+        "💡 <b>Или просто напишите</b> — я помогу!",
         parse_mode="HTML",
         reply_markup=get_access_keyboard()
     )
@@ -658,7 +663,8 @@ async def tech_support_category(message: Message, state: FSMContext):
         f"👤 Водитель: {user_data.get('fullname')}\n\n"
         "• 📱 Проблема с приложением\n"
         "• 🚫 Нет заказов\n"
-        "• ⭐ Упал рейтинг",
+        "• ⭐ Упал рейтинг\n\n"
+        "💡 <b>Или просто напишите</b> — я помогу!",
         parse_mode="HTML",
         reply_markup=get_support_keyboard()
     )
@@ -766,4 +772,82 @@ async def rating_dropped(message: Message, state: FSMContext):
         await message.answer(
             f"❌ Ошибка. Нажмите '🆘 Оператор срочно'.",
             reply_markup=get_support_keyboard()
+        )
+
+
+# ============ ОБРАБОТЧИК ЛЮБЫХ ТЕКСТОВЫХ СООБЩЕНИЙ (ИИ) ============
+
+@router.message(F.text)
+async def handle_any_text(message: Message, state: FSMContext):
+    """Обработка любых текстовых сообщений через ИИ"""
+    text = message.text.strip()
+    
+    # Пропускаем команды
+    if text.startswith('/'):
+        return
+    
+    # Список кнопок, которые не нужно обрабатывать ИИ
+    buttons = ["⛽ Топливная карта", "💵 Выплаты и зарплата", "🔐 Доступ к сайту", 
+               "🔧 Техподдержка", "◀️ Назад", "❓ Помощь", "📞 Оператор", 
+               "🆘 Оператор срочно", "🆔 Мой профиль", "📝 Зарегистрироваться",
+               "🔓 Разблокировать карту", "📈 Обновить лимит", "⛽ Не работает на заправке",
+               "🆕 Заказать новую карту", "💰 Вывести деньги на карту", "❓ Где мои деньги?",
+               "📈 Увеличить квоту", "💳 Ошибка в реквизитах", "🔓 Открыть доступ",
+               "📝 Зарегистрироваться на сайте", "🔄 Восстановить пароль", "📱 Проблема с приложением",
+               "🚫 Нет заказов", "⭐ Упал рейтинг"]
+    
+    if text in buttons:
+        return
+    
+    user_data = await state.get_data()
+    
+    if not user_data.get("registered"):
+        await message.answer(
+            "❌ Сначала зарегистрируйтесь (кнопка 📝 Зарегистрироваться)",
+            reply_markup=get_unregistered_keyboard()
+        )
+        return
+    
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    # Отправляем статус "печатает"
+    await message.bot.send_chat_action(message.chat.id, "typing")
+    
+    # Используем ИИ для анализа
+    result = await llm_classifier.classify(text)
+    
+    if result.get("need_manager"):
+        # Создаём задачу в Planfix через вебхук
+        title = f"{result.get('category')}: {result.get('problem')} - {driver_name} (ID: {driver_id})"
+        description = f"""
+Сообщение: {text}
+
+Категория: {result.get('category')}
+Проблема: {result.get('problem')}
+Решение: {result.get('solution')}
+
+👤 Водитель: {driver_name}
+🆔 ID: {driver_id}
+📅 Время: {message.date}
+        """
+        success = await create_task_via_webhook(title, description)
+        
+        if success:
+            await message.answer(
+                f"{result.get('response')}\n\n✅ Заявка создана в Planfix!",
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
+            )
+        else:
+            await message.answer(
+                f"{result.get('response')}\n\n⚠️ Ошибка при создании заявки. Нажмите '🆘 Оператор срочно'.",
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
+            )
+    else:
+        await message.answer(
+            f"{result.get('response')}\n\n{result.get('solution')}",
+            parse_mode="HTML",
+            reply_markup=get_main_keyboard()
         )

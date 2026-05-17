@@ -15,30 +15,44 @@ class LLMIntentClassifier:
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
     
     async def classify(self, user_message: str) -> dict:
+        """
+        Определяет проблему по тексту сообщения с помощью GPT-4o-mini
+        """
         prompt = f"""Ты — AI-агент службы поддержки водителей такси.
 
-Вот наша база знаний:
+Вот наша база знаний (категория → проблема → решение):
 {KNOWLEDGE_BASE}
 
-Верни ТОЛЬКО JSON (без пояснений):
+Проанализируй сообщение водителя и верни ТОЛЬКО JSON (без пояснений, без ```json).
+
+Формат ответа:
 {{
     "category": "Выплаты | Топливная карта | Доступ к сайту",
-    "problem": "название проблемы",
-    "solution": "решение из базы знаний",
-    "need_manager": false,
-    "response": "короткий ответ водителю"
+    "problem": "название проблемы из базы знаний",
+    "solution": "полный текст решения из базы знаний",
+    "need_manager": true/false,
+    "response": "короткий ответ водителю (2-3 предложения, дружелюбно, с эмодзи)"
 }}
 
-Сообщение: "{user_message}"
+Сообщение водителя: "{user_message}"
 """
         try:
             response = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1
+                messages=[
+                    {"role": "system", "content": "Ты эксперт службы поддержки такси. Отвечай только JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=1000
             )
-            result = json.loads(response.choices[0].message.content)
+            
+            # Очищаем ответ от возможных маркеров кода
+            content = response.choices[0].message.content
+            content = content.replace("```json", "").replace("```", "").strip()
+            result = json.loads(content)
             return result
+            
         except Exception as e:
             logger.error(f"OpenAI ошибка: {e}")
             return {
@@ -46,7 +60,7 @@ class LLMIntentClassifier:
                 "problem": "Не удалось определить",
                 "solution": "",
                 "need_manager": True,
-                "response": "Не смог распознать проблему. Создам заявку специалисту."
+                "response": "🔍 Не смог точно определить вашу проблему. Создам заявку для специалиста."
             }
 
 llm_classifier = LLMIntentClassifier()
