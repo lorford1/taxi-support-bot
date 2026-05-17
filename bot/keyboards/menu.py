@@ -1,5 +1,6 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
+
 
 def get_main_keyboard():
     """Главная клавиатура с категориями"""
@@ -9,6 +10,7 @@ def get_main_keyboard():
         KeyboardButton(text="💵 Выплаты и зарплата"),
         KeyboardButton(text="🔐 Доступ к сайту"),
         KeyboardButton(text="🔧 Техподдержка"),
+        KeyboardButton(text="🆘 Оператор срочно"),
         KeyboardButton(text="📞 Оператор"),
         KeyboardButton(text="❓ Помощь")
     )
@@ -49,7 +51,7 @@ def get_access_keyboard():
     builder = ReplyKeyboardBuilder()
     builder.add(
         KeyboardButton(text="🔓 Открыть доступ"),
-        KeyboardButton(text="📝 Зарегистрироваться"),
+        KeyboardButton(text="📝 Зарегистрироваться на сайте"),
         KeyboardButton(text="🔄 Восстановить пароль"),
         KeyboardButton(text="◀️ Назад")
     )

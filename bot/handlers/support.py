@@ -3,6 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
+from datetime import datetime, timedelta
 
 from bot.keyboards.menu import (
     get_main_keyboard,
@@ -17,9 +18,8 @@ from core.planfix_client import planfix
 # Создаём роутер
 router = Router()
 
-# ID исполнителя в Planfix (сотрудник, которому назначаются задачи)
-# 🔧 ЗДЕСЬ УКАЖИТЕ ID СОТРУДНИКА ИЗ PLANFIX
-PLANFIX_ASSIGNEE_ID = 2  # ← Замените на реальный ID сотрудника (например, Стельмах Дмитрий)
+# ID исполнителя в Planfix (Стельмах Дмитрий)
+PLANFIX_ASSIGNEE_ID = 2
 
 
 # ============ КЛАВИАТУРЫ ДЛЯ РЕГИСТРАЦИИ ============
@@ -142,7 +142,8 @@ async def cmd_help(message: Message):
         "<b>Команды:</b>\n"
         "/start — главное меню\n"
         "/help — эта справка\n\n"
-        "📞 <b>Оператор</b> — связь с живым специалистом",
+        "📞 <b>Оператор</b> — связь с живым специалистом\n"
+        "🆘 <b>Оператор срочно</b> — экстренный вызов",
         parse_mode="HTML"
     )
 
@@ -172,7 +173,7 @@ async def call_operator(message: Message, state: FSMContext):
     status_msg = await message.answer("🔄 Создаю заявку оператору...")
     
     result = await planfix.create_task(
-        title=f"🚨 Срочный вызов оператора: {driver_name} (ID: {driver_id})",
+        title=f"📞 Вызов оператора: {driver_name} (ID: {driver_id})",
         description=f"""
 Пользователь запросил соединение с оператором.
 
@@ -191,8 +192,7 @@ async def call_operator(message: Message, state: FSMContext):
         await message.answer(
             f"👨‍💼 <b>Соединяю с оператором...</b>\n\n"
             f"✅ Создана заявка №{result.get('general')}\n\n"
-            f"Специалист свяжется с вами в ближайшее время.\n\n"
-            f"📅 Задача появится в Планировщике.",
+            f"Специалист свяжется с вами в ближайшее время.",
             parse_mode="HTML"
         )
     else:
@@ -201,6 +201,59 @@ async def call_operator(message: Message, state: FSMContext):
             f"📋 Ошибка: {result.get('error')}\n\n"
             f"Пожалуйста, обратитесь к оператору напрямую.",
             parse_mode="HTML"
+        )
+
+
+@router.message(F.text == "🆘 Оператор срочно")
+async def urgent_operator(message: Message, state: FSMContext):
+    """Срочный вызов оператора (проверка Планировщика)"""
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', message.from_user.full_name)
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    status_msg = await message.answer("🚨 Отправляю срочный запрос оператору...")
+    
+    # Явно задаём даты для проверки Планировщика
+    today = datetime.now().strftime("%Y-%m-%d")
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    result = await planfix.create_task(
+        title=f"🚨 СРОЧНЫЙ ВЫЗОВ ОПЕРАТОРА: {driver_name} (ID: {driver_id})",
+        description=f"""
+🚨 СРОЧНОЕ ОБРАЩЕНИЕ ВОДИТЕЛЯ
+
+👤 Водитель: {driver_name}
+🆔 ID: {driver_id}
+📅 Время: {message.date}
+📱 Telegram ID: {message.from_user.id}
+
+⚠️ Водитель запросил срочное соединение с оператором!
+        """,
+        assignee_id=PLANFIX_ASSIGNEE_ID,
+        start_date=today,
+        end_date=tomorrow
+    )
+    
+    await status_msg.delete()
+    
+    if result.get("success"):
+        await message.answer(
+            f"🚨 <b>Срочный запрос отправлен, {driver_name}!</b>\n\n"
+            f"✅ Заявка №{result.get('general')} создана в Planfix\n"
+            f"📅 Дата начала: {today}\n"
+            f"📅 Дата окончания: {tomorrow}\n\n"
+            f"👨‍💼 Оператор свяжется с вами в ближайшее время.\n\n"
+            f"📌 <i>Проверьте, появилась ли эта задача в Планировщике Planfix на сегодняшнюю дату.</i>",
+            parse_mode="HTML",
+            reply_markup=get_main_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ <b>Ошибка при создании срочной заявки!</b>\n\n"
+            f"📋 Ошибка: {result.get('error')}\n\n"
+            f"Пожалуйста, напишите 'Оператор' для связи.",
+            parse_mode="HTML",
+            reply_markup=get_main_keyboard()
         )
 
 
@@ -256,7 +309,6 @@ async def unblock_card(message: Message, state: FSMContext):
         await message.answer(
             f"🔓 <b>Хорошо, {driver_name}!</b>\n\n"
             f"✅ Заявка №{result.get('general')} создана в Planfix!\n\n"
-            f"📅 Задача появится в Планировщике.\n\n"
             f"👨‍💼 Специалист свяжется с вами.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
@@ -291,8 +343,7 @@ async def update_limit(message: Message, state: FSMContext):
         await message.answer(
             f"📈 <b>Хорошо, {driver_name}!</b>\n\n"
             f"✅ Создана заявка на обновление лимита. Номер: #{result.get('general')}\n\n"
-            f"⛽ Лимит будет обновлён в ближайшее время.\n\n"
-            f"📅 Задача появится в Планировщике.",
+            f"⛽ Лимит будет обновлён в ближайшее время.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
@@ -322,8 +373,7 @@ async def card_not_working(message: Message, state: FSMContext):
         await message.answer(
             f"⛽ <b>Понимаю вашу ситуацию, {driver_name}!</b>\n\n"
             f"✅ Создана заявка в техподдержку. Номер: #{result.get('general')}\n\n"
-            f"🛠️ Специалист проверит статус вашей карты.\n\n"
-            f"📅 Задача появится в Планировщике.",
+            f"🛠️ Специалист проверит статус вашей карты.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
