@@ -1,3 +1,4 @@
+import logging
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -6,14 +7,17 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKey
 
 from storage.user_storage import user_storage
 
+logger = logging.getLogger(__name__)
 router = Router()
 
-# Состояния для регистрации
+
+# ============ СОСТОЯНИЯ ============
 class RegistrationStates(StatesGroup):
     waiting_for_id = State()
     waiting_for_fullname = State()
 
 
+# ============ КЛАВИАТУРЫ ============
 def get_registered_keyboard():
     """Клавиатура для зарегистрированного пользователя"""
     buttons = [
@@ -31,12 +35,11 @@ def get_registered_keyboard():
 
 def get_unregistered_keyboard():
     """Клавиатура для незарегистрированного пользователя"""
-    buttons = [
-        [KeyboardButton(text="📝 Зарегистрироваться")]
-    ]
+    buttons = [[KeyboardButton(text="📝 Зарегистрироваться")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
+# ============ ОБРАБОТЧИКИ ============
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     """Обработка команды /start"""
@@ -47,8 +50,7 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(
             f"🚕 <b>С возвращением, {user.get('fullname')}!</b>\n\n"
             f"🆔 Ваш ID: <code>{user.get('driver_id')}</code>\n\n"
-            f"Выберите категорию проблемы на кнопках ниже.\n\n"
-            f"💡 <b>Совет:</b> Вы можете просто написать проблему словами.",
+            f"Выберите категорию проблемы на кнопках ниже.",
             parse_mode="HTML",
             reply_markup=get_registered_keyboard()
         )
@@ -71,6 +73,8 @@ async def cmd_start(message: Message, state: FSMContext):
 @router.message(F.text == "📝 Зарегистрироваться")
 async def start_registration(message: Message, state: FSMContext):
     """Начало процесса регистрации"""
+    logger.info(f"🔍 Нажата кнопка регистрации от {message.from_user.id}")
+    
     await message.answer(
         "📝 <b>Регистрация водителя</b>\n\n"
         "Пожалуйста, введите ваш <b>ID</b> (номер водителя в системе).\n\n"
@@ -87,7 +91,6 @@ async def process_id(message: Message, state: FSMContext):
     """Обработка ID водителя"""
     driver_id = message.text.strip()
     
-    # Проверяем, что ID состоит из цифр
     if not driver_id.isdigit():
         await message.answer(
             "❌ <b>Неверный формат ID</b>\n\n"
@@ -97,7 +100,6 @@ async def process_id(message: Message, state: FSMContext):
         )
         return
     
-    # Сохраняем ID
     await state.update_data(driver_id=driver_id)
     
     await message.answer(
@@ -114,7 +116,6 @@ async def process_fullname(message: Message, state: FSMContext):
     """Обработка ФИО водителя"""
     fullname = message.text.strip()
     
-    # Простая проверка: должно быть минимум 2 слова
     if len(fullname.split()) < 2:
         await message.answer(
             "❌ <b>Неверный формат ФИО</b>\n\n"
@@ -124,12 +125,11 @@ async def process_fullname(message: Message, state: FSMContext):
         )
         return
     
-    # Получаем сохранённый ID
     user_data = await state.get_data()
     driver_id = user_data.get("driver_id")
     telegram_id = str(message.from_user.id)
     
-    # Сохраняем в постоянное хранилище
+    # Сохраняем в базу данных
     user_storage.save_user(telegram_id, {
         "driver_id": driver_id,
         "fullname": fullname,
@@ -139,7 +139,6 @@ async def process_fullname(message: Message, state: FSMContext):
         "registered_at": message.date.isoformat()
     })
     
-    # Сохраняем в FSM
     await state.update_data(
         driver_id=driver_id,
         fullname=fullname,
@@ -147,11 +146,11 @@ async def process_fullname(message: Message, state: FSMContext):
     )
     
     await message.answer(
-        "✅ <b>Регистрация успешно завершена!</b>\n\n"
+        f"✅ <b>Регистрация успешно завершена!</b>\n\n"
         f"🆔 <b>Ваш ID:</b> <code>{driver_id}</code>\n"
         f"👤 <b>Ваше ФИО:</b> {fullname}\n\n"
         "Теперь все ваши заявки будут автоматически привязываться к вам.\n\n"
-        "Выберите категорию проблемы на кнопках ниже\n\n"
+        "Выберите категорию проблемы на кнопках ниже.\n\n"
         "💡 <b>Совет:</b> Вы можете просто написать проблему словами,\n"
         "и я постараюсь помочь или создам заявку.",
         parse_mode="HTML",
@@ -187,7 +186,7 @@ async def show_profile(message: Message, state: FSMContext):
 
 @router.message(Command("reset"))
 async def reset_registration(message: Message, state: FSMContext):
-    """Сброс регистрации (для тестирования)"""
+    """Сброс регистрации"""
     telegram_id = str(message.from_user.id)
     
     if user_storage.delete_user(telegram_id):
