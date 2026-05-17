@@ -57,8 +57,13 @@ async def cmd_start(message: Message, state: FSMContext):
     user = user_storage.get_user(telegram_id)
     
     if user:
+        # Разбиваем ФИО на части для обращения по имени
+        fullname = user.get('fullname', 'Уважаемый водитель')
+        name_parts = fullname.split()
+        first_name = name_parts[0] if name_parts else "Уважаемый"
+        
         await message.answer(
-            f"🚕 <b>С возвращением, {user.get('fullname')}!</b>\n\n"
+            f"🚕 <b>С возвращением, {fullname}!</b>\n\n"
             f"🆔 Ваш ID: <code>{user.get('driver_id')}</code>\n\n"
             f"📝 <b>Просто напишите вашу проблему</b> — я проанализирую и создам заявку.\n\n"
             f"Примеры:\n"
@@ -71,6 +76,7 @@ async def cmd_start(message: Message, state: FSMContext):
         await state.update_data(
             driver_id=user.get('driver_id'),
             fullname=user.get('fullname'),
+            first_name=first_name,
             registered=True
         )
     else:
@@ -192,21 +198,28 @@ async def handle_message(message: Message, state: FSMContext):
             )
             return
         else:
+            # Разбиваем ФИО для обращения по имени
+            fullname = user.get('fullname', 'Уважаемый водитель')
+            name_parts = fullname.split()
+            first_name = name_parts[0] if name_parts else "Уважаемый"
+            
             await state.update_data(
                 driver_id=user.get('driver_id'),
-                fullname=user.get('fullname'),
+                fullname=fullname,
+                first_name=first_name,
                 registered=True
             )
             user_data = await state.get_data()
     
     driver_name = user_data.get('fullname', 'водитель')
+    driver_first_name = user_data.get('first_name', 'Уважаемый')
     driver_id = user_data.get('driver_id', 'не указан')
     
     # Отправляем статус "печатает"
     await message.bot.send_chat_action(message.chat.id, "typing")
     
     # Используем ИИ для анализа
-    result = await llm_classifier.classify(text)
+    result = await llm_classifier.classify(text, driver_name=driver_first_name)
     
     if result.get("need_manager"):
         # Создаём задачу в Planfix
@@ -231,7 +244,7 @@ async def handle_message(message: Message, state: FSMContext):
                 reply_markup=get_registered_keyboard()
             )
             
-            # Уведомляем оператора (опционально)
+            # Уведомляем оператора
             try:
                 await message.bot.send_message(
                     chat_id=OPERATOR_TELEGRAM_ID,
