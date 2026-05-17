@@ -16,23 +16,14 @@ class LLMIntentClassifier:
         self.model = "ft:gpt-4o-mini-2024-07-18:neiropark:taxi-support-v3:DgeTtJB7"
     
     async def classify(self, user_message: str, driver_name: str = None) -> dict:
-        """
-        Определяет проблему по тексту сообщения с помощью обученной модели
-        """
-        # Извлекаем имя из сообщения, если не передано
         if not driver_name:
             driver_name = self._extract_name_from_message(user_message)
         
-        # Формируем имя в правильном падеже для обращения
-        greeting = "Уважаемый водитель"
-        if driver_name and driver_name != "водитель":
-            greeting = f"Уважаемый {driver_name}"
-        
         prompt = f"""Ты — AI-агент службы поддержки водителей такси.
 
-ВАЖНО: Водителя зовут {driver_name}. Обращайся к нему по имени в ответе (используй {greeting} или просто имя).
+ВАЖНО: Водителя зовут {driver_name}. Обращайся к нему по имени в ответе.
 
-Проанализируй сообщение водителя и верни ТОЛЬКО JSON (без пояснений, без ```json).
+Проанализируй сообщение водителя и верни ТОЛЬКО JSON.
 
 Формат ответа:
 {{
@@ -60,10 +51,12 @@ class LLMIntentClassifier:
             content = content.replace("```json", "").replace("```", "").strip()
             result = json.loads(content)
             
-            # Если модель не использовала имя, подставляем его в ответ
+            # Если модель всё ещё использует "Александр" или фамилию, исправляем
             if driver_name and driver_name != "водитель":
-                if result.get("response") and "Александр" in result["response"]:
-                    result["response"] = result["response"].replace("Александр", driver_name)
+                old_name_patterns = ["Александр", driver_name.split()[-1] if driver_name else ""]
+                for old_name in old_name_patterns:
+                    if old_name and result.get("response") and old_name in result["response"]:
+                        result["response"] = result["response"].replace(old_name, driver_name)
             
             return result
             
@@ -74,11 +67,10 @@ class LLMIntentClassifier:
                 "problem": "Не удалось определить",
                 "solution": "",
                 "need_manager": True,
-                "response": f"🔍 {greeting}, не смог точно определить вашу проблему. Создам заявку для специалиста."
+                "response": f"🔍 Уважаемый {driver_name}, не смог точно определить вашу проблему. Создам заявку для специалиста."
             }
     
     def _extract_name_from_message(self, message: str) -> str:
-        """Пытается извлечь имя из сообщения"""
         patterns = [
             r"меня зовут ([А-Я][а-я]+ [А-Я][а-я]+ [А-Я][а-я]+)",
             r"это ([А-Я][а-я]+ [А-Я][а-я]+ [А-Я][а-я]+)",
@@ -89,7 +81,7 @@ class LLMIntentClassifier:
             if match:
                 name_parts = match.group(1).split()
                 if len(name_parts) >= 2:
-                    return name_parts[0]  # возвращаем имя
+                    return name_parts[1]
         return "водитель"
 
 llm_classifier = LLMIntentClassifier()

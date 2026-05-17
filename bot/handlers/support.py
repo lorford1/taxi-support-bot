@@ -14,16 +14,12 @@ from core.llm_intent import llm_classifier
 logger = logging.getLogger(__name__)
 router = Router()
 
-# URL вебхука Planfix
 WEBHOOK_URL = "https://taxit.planfix.ru/webhook/get/j0tc-k18j-5jf6-bqvh"
 PROJECT_ID = None
-
-# ID оператора в Telegram (замените на реальный)
-OPERATOR_TELEGRAM_ID = 1914378378  # Ваш Telegram ID
+OPERATOR_TELEGRAM_ID = 1914378378
 
 
 async def create_task_via_webhook(title: str, description: str, chat_id: int = None) -> bool:
-    """Создание задачи через входящий вебхук Planfix"""
     today = datetime.now().strftime("%Y-%m-%d")
     tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     
@@ -52,15 +48,17 @@ async def create_task_via_webhook(title: str, description: str, chat_id: int = N
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
-    """Обработка команды /start"""
     telegram_id = str(message.from_user.id)
     user = user_storage.get_user(telegram_id)
     
     if user:
-        # Разбиваем ФИО на части для обращения по имени
         fullname = user.get('fullname', 'Уважаемый водитель')
         name_parts = fullname.split()
-        first_name = name_parts[0] if name_parts else "Уважаемый"
+        # Берём имя (второе слово), если есть
+        if len(name_parts) >= 2:
+            first_name = name_parts[1]  # Иван
+        else:
+            first_name = name_parts[0] if name_parts else "Уважаемый"
         
         await message.answer(
             f"🚕 <b>С возвращением, {fullname}!</b>\n\n"
@@ -75,7 +73,7 @@ async def cmd_start(message: Message, state: FSMContext):
         )
         await state.update_data(
             driver_id=user.get('driver_id'),
-            fullname=user.get('fullname'),
+            fullname=fullname,
             first_name=first_name,
             registered=True
         )
@@ -102,7 +100,7 @@ async def cmd_help(message: Message):
         "• Карта заблокировалась на заправке\n"
         "• Не могу зайти в личный кабинет\n\n"
         "<b>Команды:</b>\n"
-        "/start — главное меню\n"
+        "/start — главное менú\n"
         "/help — эта справка",
         parse_mode="HTML"
     )
@@ -110,7 +108,6 @@ async def cmd_help(message: Message):
 
 @router.message(F.text == "📞 Оператор")
 async def call_operator(message: Message, state: FSMContext):
-    """Срочный вызов оператора"""
     user_data = await state.get_data()
     
     if not user_data.get("registered"):
@@ -146,7 +143,6 @@ async def call_operator(message: Message, state: FSMContext):
             reply_markup=get_registered_keyboard()
         )
         
-        # Уведомляем оператора
         try:
             await message.bot.send_message(
                 chat_id=OPERATOR_TELEGRAM_ID,
@@ -174,10 +170,8 @@ async def help_button(message: Message):
 
 @router.message(F.text)
 async def handle_message(message: Message, state: FSMContext):
-    """Обработка любого текстового сообщения через ИИ"""
     text = message.text.strip()
     
-    # Пропускаем команды и кнопки
     if text.startswith('/'):
         return
     
@@ -186,7 +180,6 @@ async def handle_message(message: Message, state: FSMContext):
     
     user_data = await state.get_data()
     
-    # Проверяем регистрацию
     if not user_data.get("registered"):
         telegram_id = str(message.from_user.id)
         user = user_storage.get_user(telegram_id)
@@ -198,10 +191,12 @@ async def handle_message(message: Message, state: FSMContext):
             )
             return
         else:
-            # Разбиваем ФИО для обращения по имени
             fullname = user.get('fullname', 'Уважаемый водитель')
             name_parts = fullname.split()
-            first_name = name_parts[0] if name_parts else "Уважаемый"
+            if len(name_parts) >= 2:
+                first_name = name_parts[1]
+            else:
+                first_name = name_parts[0] if name_parts else "Уважаемый"
             
             await state.update_data(
                 driver_id=user.get('driver_id'),
@@ -215,14 +210,11 @@ async def handle_message(message: Message, state: FSMContext):
     driver_first_name = user_data.get('first_name', 'Уважаемый')
     driver_id = user_data.get('driver_id', 'не указан')
     
-    # Отправляем статус "печатает"
     await message.bot.send_chat_action(message.chat.id, "typing")
     
-    # Используем ИИ для анализа
     result = await llm_classifier.classify(text, driver_name=driver_first_name)
     
     if result.get("need_manager"):
-        # Создаём задачу в Planfix
         title = f"{result.get('category')}: {result.get('problem')} - {driver_name} (ID: {driver_id})"
         description = f"""
 Сообщение: {text}
@@ -239,12 +231,11 @@ async def handle_message(message: Message, state: FSMContext):
         
         if success:
             await message.answer(
-                f"{result.get('response')}\n\n✅ Заявка создана в Planfix!\n\nСпециалист свяжется с вами.",
+                result.get('response'),
                 parse_mode="HTML",
                 reply_markup=get_registered_keyboard()
             )
             
-            # Уведомляем оператора
             try:
                 await message.bot.send_message(
                     chat_id=OPERATOR_TELEGRAM_ID,
@@ -263,9 +254,9 @@ async def handle_message(message: Message, state: FSMContext):
                 reply_markup=get_registered_keyboard()
             )
     else:
-        # Ответ без создания заявки
+        # Ответ без создания заявки (убираем дублирование)
         await message.answer(
-            f"{result.get('response')}\n\n{result.get('solution')}",
+            result.get('response'),
             parse_mode="HTML",
             reply_markup=get_registered_keyboard()
         )
