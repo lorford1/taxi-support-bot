@@ -4,6 +4,7 @@ from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from datetime import datetime, timedelta
+import aiohttp
 
 from bot.keyboards.menu import (
     get_main_keyboard,
@@ -13,13 +14,15 @@ from bot.keyboards.menu import (
     get_support_keyboard
 )
 from storage.user_storage import user_storage
-from core.planfix_client import planfix
 
 # Создаём роутер
 router = Router()
 
-# ID исполнителя в Planfix (Стельмах Дмитрий)
-PLANFIX_ASSIGNEE_ID = 2
+# URL вебхука Planfix
+WEBHOOK_URL = "https://taxit.planfix.ru/webhook/get/j0tc-k18j-5jf6-bqvh"
+
+# ID проекта (если есть, иначе None)
+PROJECT_ID = None  # Замените на ID проекта, если есть
 
 
 # ============ КЛАВИАТУРЫ ДЛЯ РЕГИСТРАЦИИ ============
@@ -34,6 +37,32 @@ def get_unregistered_keyboard():
     return guk()
 
 
+async def create_task_via_webhook(title: str, description: str) -> bool:
+    """
+    Создание задачи через входящий вебхук Planfix
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    params = {
+        "name": title,
+        "description": description,
+        "startDate": today,
+        "endDate": tomorrow
+    }
+    
+    if PROJECT_ID:
+        params["project"] = PROJECT_ID
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(WEBHOOK_URL, params=params) as response:
+                return response.status == 200
+    except Exception as e:
+        print(f"Ошибка вебхука: {e}")
+        return False
+
+
 # ============ БАЗА ОТВЕТОВ ============
 
 ANSWERS = {
@@ -46,12 +75,12 @@ ANSWERS = {
                       "📧 На почту придёт подтверждение запроса",
     
     "где мои деньги": "🔍 <b>Проверка статуса выплаты</b>\n\n"
-                      "✅ Я создал заявку на проверку. Номер: #{}\n\n"
+                      "✅ Я создал заявку на проверку.\n\n"
                       "⏰ Обычно деньги поступают в течение рабочего дня.\n"
                       "📞 Если прошло более 3 дней — напишите 'Оператор'.",
     
     "увеличить квоту": "📈 <b>Увеличение квоты на вывод</b>\n\n"
-                       "✅ Создана заявка на увеличение квоты. Номер: #{}\n\n"
+                       "✅ Создана заявка на увеличение квоты.\n\n"
                        "👨‍💼 Менеджер свяжется с вами для уточнения деталей.\n"
                        "📊 Квота обновляется раз в неделю.",
     
@@ -60,7 +89,7 @@ ANSWERS = {
                         "• IBAN должен содержать только буквы и цифры\n"
                         "• ФИО должно быть на русском языке\n"
                         "• Номер карты должен быть активным\n\n"
-                        "✅ Создана заявка на проверку. Номер: #{}",
+                        "✅ Создана заявка на проверку.",
     
     "открыть доступ": "🔐 <b>Доступ к сайту</b>\n\n"
                       "✅ Доступ предоставлен!\n\n"
@@ -76,7 +105,7 @@ ANSWERS = {
                            "✅ Если не приходит письмо — напишите 'Оператор'.",
     
     "проблема приложение": "📱 <b>Проблема с приложением Яндекс Про</b>\n\n"
-                          "✅ Создана заявка в техподдержку. Номер: #{}\n\n"
+                          "✅ Создана заявка в техподдержку.\n\n"
                           "💡 Попробуйте:\n"
                           "• Перезагрузить приложение\n"
                           "• Очистить кэш\n"
@@ -84,7 +113,7 @@ ANSWERS = {
                           "🛠️ Специалист проверит ваш аккаунт.",
     
     "нет заказов": "🚕 <b>Нет заказов</b>\n\n"
-                   "✅ Создана заявка на проверку. Номер: #{}\n\n"
+                   "✅ Создана заявка на проверку.\n\n"
                    "💡 Возможные причины:\n"
                    "• Низкий рейтинг (ниже 4.5)\n"
                    "• Часы низкой активности\n"
@@ -92,7 +121,7 @@ ANSWERS = {
                    "👨‍💼 Менеджер свяжется с вами.",
     
     "упал рейтинг": "⭐ <b>Вопросы по рейтингу</b>\n\n"
-                    "✅ Создана заявка для анализа. Номер: #{}\n\n"
+                    "✅ Создана заявка для анализа.\n\n"
                     "💡 Рейтинг зависит от:\n"
                     "• Оценок пассажиров\n"
                     "• Процента принятых заказов\n"
@@ -172,33 +201,30 @@ async def call_operator(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Создаю заявку оператору...")
     
-    result = await planfix.create_task(
-        title=f"📞 Вызов оператора: {driver_name} (ID: {driver_id})",
-        description=f"""
+    title = f"📞 Вызов оператора: {driver_name} (ID: {driver_id})"
+    description = f"""
 Пользователь запросил соединение с оператором.
 
 👤 Водитель: {driver_name}
 🆔 ID: {driver_id}
 📅 Время: {message.date}
 🆔 Telegram ID: {message.from_user.id}
-👥 Username: @{message.from_user.username or 'не указан'}
-        """,
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    """
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
             f"👨‍💼 <b>Соединяю с оператором...</b>\n\n"
-            f"✅ Создана заявка №{result.get('general')}\n\n"
+            f"✅ Заявка создана в Planfix\n\n"
             f"Специалист свяжется с вами в ближайшее время.",
             parse_mode="HTML"
         )
     else:
         await message.answer(
             f"❌ <b>Ошибка при создании заявки!</b>\n\n"
-            f"📋 Ошибка: {result.get('error')}\n\n"
             f"Пожалуйста, обратитесь к оператору напрямую.",
             parse_mode="HTML"
         )
@@ -213,13 +239,8 @@ async def urgent_operator(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🚨 Отправляю срочный запрос оператору...")
     
-    # Явно задаём даты для проверки Планировщика
-    today = datetime.now().strftime("%Y-%m-%d")
-    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    result = await planfix.create_task(
-        title=f"🚨 СРОЧНЫЙ ВЫЗОВ ОПЕРАТОРА: {driver_name} (ID: {driver_id})",
-        description=f"""
+    title = f"🚨 СРОЧНЫЙ ВЫЗОВ ОПЕРАТОРА: {driver_name} (ID: {driver_id})"
+    description = f"""
 🚨 СРОЧНОЕ ОБРАЩЕНИЕ ВОДИТЕЛЯ
 
 👤 Водитель: {driver_name}
@@ -228,20 +249,18 @@ async def urgent_operator(message: Message, state: FSMContext):
 📱 Telegram ID: {message.from_user.id}
 
 ⚠️ Водитель запросил срочное соединение с оператором!
-        """,
-        assignee_id=PLANFIX_ASSIGNEE_ID,
-        start_date=today,
-        end_date=tomorrow
-    )
+    """
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
+        today = datetime.now().strftime("%Y-%m-%d")
         await message.answer(
             f"🚨 <b>Срочный запрос отправлен, {driver_name}!</b>\n\n"
-            f"✅ Заявка №{result.get('general')} создана в Planfix\n"
-            f"📅 Дата начала: {today}\n"
-            f"📅 Дата окончания: {tomorrow}\n\n"
+            f"✅ Заявка создана в Planfix\n"
+            f"📅 Дата: {today}\n\n"
             f"👨‍💼 Оператор свяжется с вами в ближайшее время.\n\n"
             f"📌 <i>Проверьте, появилась ли эта задача в Планировщике Planfix на сегодняшнюю дату.</i>",
             parse_mode="HTML",
@@ -250,7 +269,6 @@ async def urgent_operator(message: Message, state: FSMContext):
     else:
         await message.answer(
             f"❌ <b>Ошибка при создании срочной заявки!</b>\n\n"
-            f"📋 Ошибка: {result.get('error')}\n\n"
             f"Пожалуйста, напишите 'Оператор' для связи.",
             parse_mode="HTML",
             reply_markup=get_main_keyboard()
@@ -290,34 +308,31 @@ async def unblock_card(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"⛽ Разблокировка карты: {driver_name} (ID: {driver_id})",
-        description=f"""
+    title = f"⛽ Разблокировка карты: {driver_name} (ID: {driver_id})"
+    description = f"""
 Запрос на разблокировку топливной карты
 
 👤 Водитель: {driver_name}
 🆔 ID: {driver_id}
 📅 Время: {message.date}
 📱 Telegram ID: {message.from_user.id}
-        """,
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    """
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
             f"🔓 <b>Хорошо, {driver_name}!</b>\n\n"
-            f"✅ Заявка №{result.get('general')} создана в Planfix!\n\n"
+            f"✅ Заявка создана в Planfix!\n\n"
             f"👨‍💼 Специалист свяжется с вами.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
     else:
-        error_text = result.get('error', 'Неизвестная ошибка')
         await message.answer(
             f"❌ <b>Ошибка при создании заявки!</b>\n\n"
-            f"📋 Текст ошибки:\n<code>{error_text}</code>\n\n"
             f"Пожалуйста, обратитесь к оператору.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
@@ -331,25 +346,24 @@ async def update_limit(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"📈 Обновление лимита: {driver_name}",
-        description=f"Запрос на обновление лимита топливной карты\nВодитель: {driver_name}",
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    title = f"📈 Обновление лимита: {driver_name}"
+    description = f"Запрос на обновление лимита топливной карты\nВодитель: {driver_name}"
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
             f"📈 <b>Хорошо, {driver_name}!</b>\n\n"
-            f"✅ Создана заявка на обновление лимита. Номер: #{result.get('general')}\n\n"
+            f"✅ Создана заявка на обновление лимита.\n\n"
             f"⛽ Лимит будет обновлён в ближайшее время.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
     else:
         await message.answer(
-            f"❌ Ошибка: {result.get('error')}\nОбратитесь к оператору.",
+            f"❌ Ошибка при создании заявки. Обратитесь к оператору.",
             reply_markup=get_fuel_card_keyboard()
         )
 
@@ -361,25 +375,24 @@ async def card_not_working(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"⛽ Проблема на заправке: {driver_name}",
-        description=f"Водитель сообщает, что карта не работает на заправке\nВодитель: {driver_name}",
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    title = f"⛽ Проблема на заправке: {driver_name}"
+    description = f"Водитель сообщает, что карта не работает на заправке\nВодитель: {driver_name}"
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
             f"⛽ <b>Понимаю вашу ситуацию, {driver_name}!</b>\n\n"
-            f"✅ Создана заявка в техподдержку. Номер: #{result.get('general')}\n\n"
+            f"✅ Создана заявка в техподдержку.\n\n"
             f"🛠️ Специалист проверит статус вашей карты.",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
     else:
         await message.answer(
-            f"❌ Ошибка: {result.get('error')}",
+            f"❌ Ошибка. Обратитесь к оператору.",
             reply_markup=get_fuel_card_keyboard()
         )
 
@@ -442,23 +455,22 @@ async def where_is_money(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"💰 Проверка выплаты: {driver_name}",
-        description=f"Запрос на проверку статуса выплаты\nВодитель: {driver_name}",
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    title = f"💰 Проверка выплаты: {driver_name}"
+    description = f"Запрос на проверку статуса выплаты\nВодитель: {driver_name}"
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
-            ANSWERS["где мои деньги"].format(result.get('general', 'создана')),
+            ANSWERS["где мои деньги"],
             parse_mode="HTML",
             reply_markup=get_payments_keyboard()
         )
     else:
         await message.answer(
-            f"❌ Ошибка: {result.get('error')}",
+            f"❌ Ошибка. Обратитесь к оператору.",
             reply_markup=get_payments_keyboard()
         )
 
@@ -470,23 +482,22 @@ async def increase_quota(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"📈 Увеличение квоты: {driver_name}",
-        description=f"Запрос на увеличение квоты вывода средств\nВодитель: {driver_name}",
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    title = f"📈 Увеличение квоты: {driver_name}"
+    description = f"Запрос на увеличение квоты вывода средств\nВодитель: {driver_name}"
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
-            ANSWERS["увеличить квоту"].format(result.get('general', 'создана')),
+            ANSWERS["увеличить квоту"],
             parse_mode="HTML",
             reply_markup=get_payments_keyboard()
         )
     else:
         await message.answer(
-            f"❌ Ошибка: {result.get('error')}",
+            f"❌ Ошибка. Обратитесь к оператору.",
             reply_markup=get_payments_keyboard()
         )
 
@@ -498,23 +509,22 @@ async def wrong_details(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"💳 Ошибка в реквизитах: {driver_name}",
-        description=f"Запрос на проверку реквизитов карты\nВодитель: {driver_name}",
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    title = f"💳 Ошибка в реквизитах: {driver_name}"
+    description = f"Запрос на проверку реквизитов карты\nВодитель: {driver_name}"
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
-            ANSWERS["ошибка реквизиты"].format(result.get('general', 'создана')),
+            ANSWERS["ошибка реквизиты"],
             parse_mode="HTML",
             reply_markup=get_payments_keyboard()
         )
     else:
         await message.answer(
-            f"❌ Ошибка: {result.get('error')}",
+            f"❌ Ошибка. Обратитесь к оператору.",
             reply_markup=get_payments_keyboard()
         )
 
@@ -548,15 +558,14 @@ async def open_access(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"🔐 Запрос доступа: {driver_name} (ID: {driver_id})",
-        description=f"Запрос на открытие доступа к сайту\nВодитель: {driver_name}\nID: {driver_id}",
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    title = f"🔐 Запрос доступа: {driver_name} (ID: {driver_id})"
+    description = f"Запрос на открытие доступа к сайту\nВодитель: {driver_name}\nID: {driver_id}"
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
             ANSWERS["открыть доступ"],
             parse_mode="HTML",
@@ -565,7 +574,7 @@ async def open_access(message: Message, state: FSMContext):
         )
     else:
         await message.answer(
-            f"❌ Ошибка: {result.get('error')}",
+            f"❌ Ошибка. Обратитесь к оператору.",
             reply_markup=get_access_keyboard()
         )
 
@@ -625,23 +634,22 @@ async def app_problem(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"📱 Проблема с приложением: {driver_name}",
-        description=f"Запрос о проблеме с приложением Яндекс Про\nВодитель: {driver_name}",
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    title = f"📱 Проблема с приложением: {driver_name}"
+    description = f"Запрос о проблеме с приложением Яндекс Про\nВодитель: {driver_name}"
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
-            ANSWERS["проблема приложение"].format(result.get('general', 'создана')),
+            ANSWERS["проблема приложение"],
             parse_mode="HTML",
             reply_markup=get_support_keyboard()
         )
     else:
         await message.answer(
-            f"❌ Ошибка: {result.get('error')}",
+            f"❌ Ошибка. Обратитесь к оператору.",
             reply_markup=get_support_keyboard()
         )
 
@@ -653,23 +661,22 @@ async def no_orders(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"🚫 Нет заказов: {driver_name}",
-        description=f"Запрос о проблеме отсутствия заказов\nВодитель: {driver_name}",
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    title = f"🚫 Нет заказов: {driver_name}"
+    description = f"Запрос о проблеме отсутствия заказов\nВодитель: {driver_name}"
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
-            ANSWERS["нет заказов"].format(result.get('general', 'создана')),
+            ANSWERS["нет заказов"],
             parse_mode="HTML",
             reply_markup=get_support_keyboard()
         )
     else:
         await message.answer(
-            f"❌ Ошибка: {result.get('error')}",
+            f"❌ Ошибка. Обратитесь к оператору.",
             reply_markup=get_support_keyboard()
         )
 
@@ -681,22 +688,21 @@ async def rating_dropped(message: Message, state: FSMContext):
     
     status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
     
-    result = await planfix.create_task(
-        title=f"⭐ Вопрос по рейтингу: {driver_name}",
-        description=f"Запрос о падении рейтинга водителя\nВодитель: {driver_name}",
-        assignee_id=PLANFIX_ASSIGNEE_ID
-    )
+    title = f"⭐ Вопрос по рейтингу: {driver_name}"
+    description = f"Запрос о падении рейтинга водителя\nВодитель: {driver_name}"
+    
+    success = await create_task_via_webhook(title, description)
     
     await status_msg.delete()
     
-    if result.get("success"):
+    if success:
         await message.answer(
-            ANSWERS["упал рейтинг"].format(result.get('general', 'создана')),
+            ANSWERS["упал рейтинг"],
             parse_mode="HTML",
             reply_markup=get_support_keyboard()
         )
     else:
         await message.answer(
-            f"❌ Ошибка: {result.get('error')}",
+            f"❌ Ошибка. Обратитесь к оператору.",
             reply_markup=get_support_keyboard()
         )
