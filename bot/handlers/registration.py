@@ -14,8 +14,6 @@ class RegistrationStates(StatesGroup):
     waiting_for_fullname = State()
 
 
-# ============ КЛАВИАТУРЫ ============
-
 def get_registered_keyboard():
     """Клавиатура для зарегистрированного пользователя"""
     buttons = [
@@ -24,6 +22,7 @@ def get_registered_keyboard():
         [KeyboardButton(text="🔐 Доступ к сайту")],
         [KeyboardButton(text="🔧 Техподдержка")],
         [KeyboardButton(text="🆔 Мой профиль")],
+        [KeyboardButton(text="🆘 Оператор срочно")],
         [KeyboardButton(text="📞 Оператор")],
         [KeyboardButton(text="❓ Помощь")]
     ]
@@ -38,38 +37,31 @@ def get_unregistered_keyboard():
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-# ============ ОБРАБОТЧИКИ ============
-
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     """Обработка команды /start"""
     telegram_id = str(message.from_user.id)
-    
-    # Проверяем в постоянном хранилище
     user = user_storage.get_user(telegram_id)
     
     if user:
-        # Уже зарегистрирован
         await message.answer(
             f"🚕 <b>С возвращением, {user.get('fullname')}!</b>\n\n"
             f"🆔 Ваш ID: <code>{user.get('driver_id')}</code>\n\n"
-            f"Выберите категорию проблемы на кнопках ниже.",
+            f"Выберите категорию проблемы на кнопках ниже.\n\n"
+            f"💡 <b>Совет:</b> Вы можете просто написать проблему словами.",
             parse_mode="HTML",
             reply_markup=get_registered_keyboard()
         )
-        # Сохраняем в FSM для текущей сессии
         await state.update_data(
             driver_id=user.get('driver_id'),
             fullname=user.get('fullname'),
             registered=True
         )
     else:
-        # Не зарегистрирован
         await message.answer(
             "🚕 <b>Добро пожаловать в службу поддержки такси!</b>\n\n"
             "🔐 <b>Для начала работы необходимо зарегистрироваться.</b>\n\n"
-            "Нажмите на кнопку <b>📝 Зарегистрироваться</b> и укажите ваш ID и ФИО.\n\n"
-            "Это поможет быстрее обрабатывать ваши заявки.",
+            "Нажмите на кнопку <b>📝 Зарегистрироваться</b>.",
             parse_mode="HTML",
             reply_markup=get_unregistered_keyboard()
         )
@@ -109,7 +101,7 @@ async def process_id(message: Message, state: FSMContext):
     await state.update_data(driver_id=driver_id)
     
     await message.answer(
-        "✅ ID принят!\n\n"
+        "✅ <b>ID принят!</b>\n\n"
         "Теперь введите ваше <b>полное ФИО</b>.\n\n"
         "Пример: <code>Иванов Иван Иванович</code>",
         parse_mode="HTML"
@@ -156,10 +148,12 @@ async def process_fullname(message: Message, state: FSMContext):
     
     await message.answer(
         "✅ <b>Регистрация успешно завершена!</b>\n\n"
-        f"🆔 Ваш ID: <code>{driver_id}</code>\n"
-        f"👤 Ваше ФИО: <b>{fullname}</b>\n\n"
+        f"🆔 <b>Ваш ID:</b> <code>{driver_id}</code>\n"
+        f"👤 <b>Ваше ФИО:</b> {fullname}\n\n"
         "Теперь все ваши заявки будут автоматически привязываться к вам.\n\n"
-        "Выберите категорию проблемы на кнопках ниже.",
+        "Выберите категорию проблемы на кнопках ниже\n\n"
+        "💡 <b>Совет:</b> Вы можете просто написать проблему словами,\n"
+        "и я постараюсь помочь или создам заявку.",
         parse_mode="HTML",
         reply_markup=get_registered_keyboard()
     )
@@ -176,7 +170,8 @@ async def show_profile(message: Message, state: FSMContext):
             "📋 <b>Ваш профиль</b>\n\n"
             f"🆔 <b>ID:</b> <code>{user.get('driver_id')}</code>\n"
             f"👤 <b>ФИО:</b> {user.get('fullname')}\n"
-            f"📅 <b>Дата регистрации:</b> {user.get('registered_at', 'неизвестно')[:10]}\n\n"
+            f"📅 <b>Дата регистрации:</b> {user.get('registered_at', 'неизвестно')[:10]}\n"
+            f"🆔 <b>Telegram ID:</b> <code>{user.get('telegram_id')}</code>\n\n"
             "Если данные неверны, обратитесь к оператору.",
             parse_mode="HTML",
             reply_markup=get_registered_keyboard()
@@ -190,13 +185,44 @@ async def show_profile(message: Message, state: FSMContext):
         )
 
 
+@router.message(Command("reset"))
+async def reset_registration(message: Message, state: FSMContext):
+    """Сброс регистрации (для тестирования)"""
+    telegram_id = str(message.from_user.id)
+    
+    if user_storage.delete_user(telegram_id):
+        await message.answer(
+            "🔄 <b>Ваша регистрация сброшена.</b>\n\n"
+            "Вы можете зарегистрироваться заново, нажав на кнопку <b>📝 Зарегистрироваться</b>.",
+            parse_mode="HTML",
+            reply_markup=get_unregistered_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Вы не были зарегистрированы.\n\n"
+            "Нажмите на кнопку <b>📝 Зарегистрироваться</b>.",
+            parse_mode="HTML",
+            reply_markup=get_unregistered_keyboard()
+        )
+    
+    await state.clear()
+
+
 @router.message(Command("cancel"))
 async def cancel_registration(message: Message, state: FSMContext):
     """Отмена регистрации"""
-    await state.clear()
-    await message.answer(
-        "❌ Регистрация отменена.\n\n"
-        "Вы можете начать заново, нажав на кнопку <b>📝 Зарегистрироваться</b>.",
-        parse_mode="HTML",
-        reply_markup=get_unregistered_keyboard()
-    )
+    current_state = await state.get_state()
+    
+    if current_state in [RegistrationStates.waiting_for_id, RegistrationStates.waiting_for_fullname]:
+        await message.answer(
+            "❌ Регистрация отменена.\n\n"
+            "Вы можете начать заново, нажав на кнопку <b>📝 Зарегистрироваться</b>.",
+            parse_mode="HTML",
+            reply_markup=get_unregistered_keyboard()
+        )
+        await state.clear()
+    else:
+        await message.answer(
+            "❌ Нет активной регистрации для отмены.",
+            reply_markup=get_unregistered_keyboard()
+        )
