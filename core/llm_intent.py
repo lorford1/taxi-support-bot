@@ -13,7 +13,8 @@ with open("core/knowledge_base.txt", "r", encoding="utf-8") as f:
 class LLMIntentClassifier:
     def __init__(self):
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = "ft:gpt-4o-mini-2024-07-18:neiropark:taxi-support-v3:DgeTtJB7"
+        self.fine_tuned_model = "ft:gpt-4o-mini-2024-07-18:neiropark:taxi-support-v3:DgeTtJB7"
+        self.fallback_model = "gpt-4o-mini"
     
     async def classify(self, user_message: str, driver_name: str = None) -> dict:
         if not driver_name:
@@ -37,10 +38,11 @@ class LLMIntentClassifier:
 Сообщение водителя: "{user_message}"
 """
         try:
+            # Сначала пробуем обученную модель
             response = await self.client.chat.completions.create(
-                model=self.model,
+                model=self.fine_tuned_model,
                 messages=[
-                    {"role": "system", "content": f"Ты эксперт службы поддержки такси. Водителя зовут {driver_name}. Всегда обращайся к нему по имени в ответах. Отвечай только JSON."},
+                    {"role": "system", "content": f"Ты эксперт службы поддержки такси. Водителя зовут {driver_name}. Отвечай только JSON."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
@@ -51,17 +53,57 @@ class LLMIntentClassifier:
             content = content.replace("```json", "").replace("```", "").strip()
             result = json.loads(content)
             
-            # Если модель всё ещё использует "Александр" или фамилию, исправляем
-            if driver_name and driver_name != "водитель":
-                old_name_patterns = ["Александр", driver_name.split()[-1] if driver_name else ""]
-                for old_name in old_name_patterns:
-                    if old_name and result.get("response") and old_name in result["response"]:
-                        result["response"] = result["response"].replace(old_name, driver_name)
+            # Если модель не распознала категорию, используем fallback
+            if result.get("category") == "unknown" or result.get("need_manager") is None:
+                logger.info(f"Обученная модель не распознала, используем fallback")
+                return await self._fallback_classify(user_message, driver_name)
             
             return result
             
         except Exception as e:
-            logger.error(f"OpenAI ошибка: {e}")
+            logger.error(f"Ошибка обученной модели: {e}")
+            return await self._fallback_classify(user_message, driver_name)
+    
+    async def _fallback_classify(self, user_message: str, driver_name: str) -> dict:
+        """Запасной вариант с обычной GPT-4o-mini и полной базой знаний"""
+        prompt = f"""Ты — AI-агент службы поддержки водителей такси.
+
+Вот наша база знаний:
+{KNOWLEDGE_BASE}
+
+ВАЖНО: Водителя зовут {driver_name}. Обращайся к нему по имени.
+
+Проанализируй сообщение водителя и верни ТОЛЬКО JSON.
+
+Формат ответа:
+{{
+    "category": "Выплаты | Топливная карта | Доступ к сайту | Техподдержка",
+    "problem": "название проблемы",
+    "solution": "текст решения из базы знаний",
+    "need_manager": true или false,
+    "response": "короткий ответ водителю (2-3 предложения, дружелюбно, с эмодзи). Обращайся к водителю по имени {driver_name}"
+}}
+
+Сообщение водителя: "{user_message}"
+"""
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.fallback_model,
+                messages=[
+                    {"role": "system", "content": f"Ты эксперт службы поддержки такси. Водителя зовут {driver_name}. Отвечай только JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=1000
+            )
+            
+            content = response.choices[0].message.content
+            content = content.replace("```json", "").replace("```", "").strip()
+            result = json.loads(content)
+            return result
+            
+        except Exception as e:
+            logger.error(f"Ошибка fallback модели: {e}")
             return {
                 "category": "unknown",
                 "problem": "Не удалось определить",
