@@ -1,3 +1,4 @@
+import logging
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.types import Message, ReplyKeyboardRemove
@@ -17,7 +18,7 @@ from bot.keyboards.menu import (
 from storage.user_storage import user_storage
 from core.llm_intent import llm_classifier
 
-# Создаём роутер
+logger = logging.getLogger(__name__)
 router = Router()
 
 # URL вебхука Planfix
@@ -62,7 +63,7 @@ async def create_task_via_webhook(title: str, description: str) -> bool:
             async with session.get(WEBHOOK_URL, params=params) as response:
                 return response.status == 200
     except Exception as e:
-        print(f"Ошибка вебхука: {e}")
+        logger.error(f"Ошибка вебхука: {e}")
         return False
 
 
@@ -194,7 +195,7 @@ async def cmd_help(message: Message):
         "<b>Срочный вызов оператора:</b>\n"
         "🆘 Нажмите 'Оператор срочно'\n\n"
         "<b>Команды:</b>\n"
-        "/start — главное менú\n"
+        "/start — главное меню\n"
         "/help — эта справка\n"
         "/reg — зарегистрироваться\n"
         "/cancel — отмена",
@@ -391,7 +392,239 @@ async def order_new_card(message: Message, state: FSMContext):
     )
 
 
-# ============ ОБРАБОТЧИК ИИ (только для зарегистрированных, не во время регистрации) ============
+# ============ ОБРАБОТЧИКИ ДРУГИХ КАТЕГОРИЙ ============
+# (выплаты, доступ, техподдержка - сокращённые версии)
+
+@router.message(F.text == "💵 Выплаты и зарплата")
+async def payments_category(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    if not user_data.get("registered"):
+        await message.answer("❌ Сначала зарегистрируйтесь (/reg)", reply_markup=get_unregistered_keyboard())
+        return
+    await message.answer(
+        "💵 <b>Выберите проблему:</b>\n\n"
+        "• 💰 Вывести деньги на карту\n"
+        "• ❓ Где мои деньги?\n"
+        "• 📈 Увеличить квоту\n"
+        "• 💳 Ошибка в реквизитах",
+        parse_mode="HTML",
+        reply_markup=get_payments_keyboard()
+    )
+
+
+@router.message(F.text == "💰 Вывести деньги на карту")
+async def withdraw_money(message: Message):
+    await message.answer(
+        "💰 <b>Инструкция:</b>\n\n"
+        "1️⃣ proracers.by/exchange\n"
+        "2️⃣ Укажите IBAN\n"
+        "3️⃣ Укажите ФИО",
+        parse_mode="HTML",
+        reply_markup=get_payments_keyboard(),
+        disable_web_page_preview=True
+    )
+
+
+@router.message(F.text == "❓ Где мои деньги?")
+async def where_is_money(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    title = f"💰 Проверка выплаты: {driver_name} (ID: {driver_id})"
+    success = await create_task_via_webhook(title, "Запрос на проверку выплаты")
+    
+    if success:
+        await message.answer(
+            "🔍 <b>Заявка создана!</b>\n\nДеньги обычно поступают в течение рабочего дня.",
+            parse_mode="HTML",
+            reply_markup=get_payments_keyboard()
+        )
+    else:
+        await message.answer("❌ Ошибка. Нажмите '🆘 Оператор срочно'.", reply_markup=get_payments_keyboard())
+
+
+@router.message(F.text == "📈 Увеличить квоту")
+async def increase_quota(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    title = f"📈 Увеличение квоты: {driver_name} (ID: {driver_id})"
+    success = await create_task_via_webhook(title, "Запрос на увеличение квоты")
+    
+    if success:
+        await message.answer(
+            "📈 <b>Заявка создана!</b>\n\nМенеджер свяжется с вами.",
+            parse_mode="HTML",
+            reply_markup=get_payments_keyboard()
+        )
+    else:
+        await message.answer("❌ Ошибка.", reply_markup=get_payments_keyboard())
+
+
+@router.message(F.text == "💳 Ошибка в реквизитах")
+async def wrong_details(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    title = f"💳 Ошибка в реквизитах: {driver_name} (ID: {driver_id})"
+    success = await create_task_via_webhook(title, "Запрос на проверку реквизитов")
+    
+    if success:
+        await message.answer(
+            "💳 <b>Заявка создана!</b>\n\nПроверьте правильность IBAN и ФИО.",
+            parse_mode="HTML",
+            reply_markup=get_payments_keyboard()
+        )
+    else:
+        await message.answer("❌ Ошибка.", reply_markup=get_payments_keyboard())
+
+
+# ============ ДОСТУП К САЙТУ ============
+
+@router.message(F.text == "🔐 Доступ к сайту")
+async def access_category(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    if not user_data.get("registered"):
+        await message.answer("❌ Сначала зарегистрируйтесь (/reg)", reply_markup=get_unregistered_keyboard())
+        return
+    await message.answer(
+        "🔐 <b>Выберите проблему:</b>\n\n"
+        "• 🔓 Открыть доступ\n"
+        "• 📝 Зарегистрироваться на сайте\n"
+        "• 🔄 Восстановить пароль",
+        parse_mode="HTML",
+        reply_markup=get_access_keyboard()
+    )
+
+
+@router.message(F.text == "🔓 Открыть доступ")
+async def open_access(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    title = f"🔐 Запрос доступа: {driver_name} (ID: {driver_id})"
+    success = await create_task_via_webhook(title, "Запрос на открытие доступа")
+    
+    if success:
+        await message.answer(
+            "🔐 <b>Доступ предоставлен!</b>\n\nВойдите на сайт: proracers.by",
+            parse_mode="HTML",
+            reply_markup=get_access_keyboard(),
+            disable_web_page_preview=True
+        )
+    else:
+        await message.answer("❌ Ошибка.", reply_markup=get_access_keyboard())
+
+
+@router.message(F.text == "📝 Зарегистрироваться на сайте")
+async def register_site(message: Message):
+    await message.answer(
+        "📝 <b>Регистрация на сайте</b>\n\n"
+        "1️⃣ proracers.by\n"
+        "2️⃣ Нажмите 'Регистрация'\n"
+        "3️⃣ Укажите почту (Gmail)\n"
+        "4️⃣ Заполните ФИО и ID\n\n"
+        "✅ После регистрации напишите сюда.",
+        parse_mode="HTML",
+        reply_markup=get_access_keyboard(),
+        disable_web_page_preview=True
+    )
+
+
+@router.message(F.text == "🔄 Восстановить пароль")
+async def recover_password(message: Message):
+    await message.answer(
+        "🔄 <b>Восстановление пароля</b>\n\n"
+        "1️⃣ proracers.by\n"
+        "2️⃣ 'Забыли пароль?'\n"
+        "3️⃣ Введите почту\n\n"
+        "✅ Если не приходит письмо — нажмите '🆘 Оператор срочно'.",
+        parse_mode="HTML",
+        reply_markup=get_access_keyboard(),
+        disable_web_page_preview=True
+    )
+
+
+# ============ ТЕХПОДДЕРЖКА ============
+
+@router.message(F.text == "🔧 Техподдержка")
+async def tech_support_category(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    if not user_data.get("registered"):
+        await message.answer("❌ Сначала зарегистрируйтесь (/reg)", reply_markup=get_unregistered_keyboard())
+        return
+    await message.answer(
+        "🔧 <b>Выберите проблему:</b>\n\n"
+        "• 📱 Проблема с приложением\n"
+        "• 🚫 Нет заказов\n"
+        "• ⭐ Упал рейтинг",
+        parse_mode="HTML",
+        reply_markup=get_support_keyboard()
+    )
+
+
+@router.message(F.text == "📱 Проблема с приложением")
+async def app_problem(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    title = f"📱 Проблема с приложением: {driver_name} (ID: {driver_id})"
+    success = await create_task_via_webhook(title, "Проблема с приложением Яндекс Про")
+    
+    if success:
+        await message.answer(
+            "📱 <b>Заявка создана!</b>\n\nПопробуйте перезагрузить приложение.",
+            parse_mode="HTML",
+            reply_markup=get_support_keyboard()
+        )
+    else:
+        await message.answer("❌ Ошибка.", reply_markup=get_support_keyboard())
+
+
+@router.message(F.text == "🚫 Нет заказов")
+async def no_orders(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    title = f"🚫 Нет заказов: {driver_name} (ID: {driver_id})"
+    success = await create_task_via_webhook(title, "Проблема с заказами")
+    
+    if success:
+        await message.answer(
+            "🚕 <b>Заявка создана!</b>\n\nПроверим ваш аккаунт.",
+            parse_mode="HTML",
+            reply_markup=get_support_keyboard()
+        )
+    else:
+        await message.answer("❌ Ошибка.", reply_markup=get_support_keyboard())
+
+
+@router.message(F.text == "⭐ Упал рейтинг")
+async def rating_dropped(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    title = f"⭐ Вопрос по рейтингу: {driver_name} (ID: {driver_id})"
+    success = await create_task_via_webhook(title, "Вопрос о падении рейтинга")
+    
+    if success:
+        await message.answer(
+            "⭐ <b>Заявка создана!</b>\n\nСпециалист даст рекомендации.",
+            parse_mode="HTML",
+            reply_markup=get_support_keyboard()
+        )
+    else:
+        await message.answer("❌ Ошибка.", reply_markup=get_support_keyboard())
+
+
+# ============ ОБРАБОТЧИК ИИ (с проверкой регистрации) ============
 
 # Список кнопок, которые НЕ обрабатываем
 IGNORED_BUTTONS = [
@@ -408,16 +641,17 @@ IGNORED_BUTTONS = [
 
 @router.message(F.text, ~F.text.in_(IGNORED_BUTTONS))
 async def handle_ai_message(message: Message, state: FSMContext):
-    """Обработка текстовых сообщений через ИИ (кроме кнопок)"""
+    """Обработка текстовых сообщений через ИИ (кроме кнопок и регистрации)"""
     text = message.text.strip()
     
     # Пропускаем команды
     if text.startswith('/'):
         return
     
-    # Пропускаем, если пользователь в процессе регистрации
+    # 🔥 ВАЖНО: Проверяем, не идёт ли регистрация
     current_state = await state.get_state()
     if current_state and "RegistrationStates" in current_state:
+        logger.info(f"⏭️ Пропускаем сообщение, идёт регистрация: {current_state}")
         return
     
     user_data = await state.get_data()
