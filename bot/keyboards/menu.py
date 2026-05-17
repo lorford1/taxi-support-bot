@@ -14,7 +14,7 @@ def get_main_keyboard():
         KeyboardButton(text="📞 Оператор"),
         KeyboardButton(text="❓ Помощь")
     )
-    builder.adjust(2)  # 2 кнопки в ряд
+    builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
 
