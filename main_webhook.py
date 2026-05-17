@@ -64,13 +64,23 @@ async def webhook(request: Request):
 @app.get("/health")
 async def health_check():
     """Эндпоинт для проверки работоспособности"""
-    return {"status": "alive", "service": "taxi-support-bot"}
+    return {"status": "alive", "service": "taxi-support-bot", "version": "2.0"}
 
 
 @app.get("/")
 async def root():
     """Корневой эндпоинт"""
-    return {"message": "Taxi Support Bot is running!"}
+    return {
+        "message": "Taxi Support Bot is running!",
+        "version": "2.0",
+        "status": "active",
+        "features": [
+            "AI-powered support (GPT-4o-mini)",
+            "Planfix integration",
+            "Driver registration",
+            "Urgent operator calls"
+        ]
+    }
 
 
 if __name__ == "__main__":
