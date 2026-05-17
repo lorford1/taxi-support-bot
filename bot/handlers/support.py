@@ -67,21 +67,37 @@ async def create_task_via_webhook(title: str, description: str) -> bool:
         return False
 
 
+async def check_registration(message: Message, state: FSMContext):
+    """Проверка регистрации через БД"""
+    telegram_id = str(message.from_user.id)
+    user = user_storage.get_user(telegram_id)
+    
+    if not user:
+        await message.answer(
+            "❌ Сначала зарегистрируйтесь (/reg)",
+            reply_markup=get_unregistered_keyboard()
+        )
+        return None
+    
+    # Обновляем state
+    await state.update_data(
+        driver_id=user.get('driver_id'),
+        fullname=user.get('fullname'),
+        registered=True
+    )
+    return user
+
+
 # ============ ОБРАБОТЧИК СРОЧНОГО ОПЕРАТОРА ============
 
 @router.message(F.text == "🆘 Оператор срочно")
 async def urgent_operator_start(message: Message, state: FSMContext):
     """Начало срочного вызова оператора — запрос сообщения"""
-    user_data = await state.get_data()
-    
-    if not user_data.get("registered"):
-        await message.answer(
-            "❌ Сначала зарегистрируйтесь (кнопка 📝 Зарегистрироваться или /reg)",
-            reply_markup=get_unregistered_keyboard()
-        )
+    user = await check_registration(message, state)
+    if not user:
         return
     
-    driver_name = user_data.get('fullname', message.from_user.full_name)
+    driver_name = user.get('fullname', message.from_user.full_name)
     
     await message.answer(
         f"🚨 <b>Срочный вызов оператора, {driver_name}!</b>\n\n"
@@ -239,9 +255,12 @@ async def help_button(message: Message):
 
 @router.message(F.text == "📞 Оператор")
 async def call_operator(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', message.from_user.full_name)
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', message.from_user.full_name)
+    driver_id = user.get('driver_id', 'не указан')
     
     status_msg = await message.answer("🔄 Создаю заявку...")
     
@@ -272,18 +291,13 @@ async def call_operator(message: Message, state: FSMContext):
 
 @router.message(F.text == "⛽ Топливная карта")
 async def fuel_card_category(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    
-    if not user_data.get("registered"):
-        await message.answer(
-            "❌ Сначала зарегистрируйтесь (/reg)",
-            reply_markup=get_unregistered_keyboard()
-        )
+    user = await check_registration(message, state)
+    if not user:
         return
     
     await message.answer(
         f"⛽ <b>Выберите проблему:</b>\n\n"
-        f"👤 {user_data.get('fullname')}\n\n"
+        f"👤 {user.get('fullname')}\n\n"
         "• 🔓 Разблокировать карту\n"
         "• 📈 Обновить лимит\n"
         "• ⛽ Не работает на заправке\n"
@@ -295,9 +309,12 @@ async def fuel_card_category(message: Message, state: FSMContext):
 
 @router.message(F.text == "🔓 Разблокировать карту")
 async def unblock_card(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     status_msg = await message.answer("🔄 Отправляю запрос...")
     
@@ -323,9 +340,12 @@ async def unblock_card(message: Message, state: FSMContext):
 
 @router.message(F.text == "📈 Обновить лимит")
 async def update_limit(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     status_msg = await message.answer("🔄 Отправляю запрос...")
     
@@ -351,9 +371,12 @@ async def update_limit(message: Message, state: FSMContext):
 
 @router.message(F.text == "⛽ Не работает на заправке")
 async def card_not_working(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     status_msg = await message.answer("🔄 Отправляю запрос...")
     
@@ -379,8 +402,11 @@ async def card_not_working(message: Message, state: FSMContext):
 
 @router.message(F.text == "🆕 Заказать новую карту")
 async def order_new_card(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
     
     await message.answer(
         f"🆕 <b>{driver_name}, заказать новую карту</b>\n\n"
@@ -392,15 +418,14 @@ async def order_new_card(message: Message, state: FSMContext):
     )
 
 
-# ============ ОБРАБОТЧИКИ ДРУГИХ КАТЕГОРИЙ ============
-# (выплаты, доступ, техподдержка - сокращённые версии)
+# ============ КАТЕГОРИЯ: ВЫПЛАТЫ ============
 
 @router.message(F.text == "💵 Выплаты и зарплата")
 async def payments_category(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    if not user_data.get("registered"):
-        await message.answer("❌ Сначала зарегистрируйтесь (/reg)", reply_markup=get_unregistered_keyboard())
+    user = await check_registration(message, state)
+    if not user:
         return
+    
     await message.answer(
         "💵 <b>Выберите проблему:</b>\n\n"
         "• 💰 Вывести деньги на карту\n"
@@ -427,9 +452,12 @@ async def withdraw_money(message: Message):
 
 @router.message(F.text == "❓ Где мои деньги?")
 async def where_is_money(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     title = f"💰 Проверка выплаты: {driver_name} (ID: {driver_id})"
     success = await create_task_via_webhook(title, "Запрос на проверку выплаты")
@@ -446,9 +474,12 @@ async def where_is_money(message: Message, state: FSMContext):
 
 @router.message(F.text == "📈 Увеличить квоту")
 async def increase_quota(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     title = f"📈 Увеличение квоты: {driver_name} (ID: {driver_id})"
     success = await create_task_via_webhook(title, "Запрос на увеличение квоты")
@@ -465,9 +496,12 @@ async def increase_quota(message: Message, state: FSMContext):
 
 @router.message(F.text == "💳 Ошибка в реквизитах")
 async def wrong_details(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     title = f"💳 Ошибка в реквизитах: {driver_name} (ID: {driver_id})"
     success = await create_task_via_webhook(title, "Запрос на проверку реквизитов")
@@ -482,14 +516,14 @@ async def wrong_details(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка.", reply_markup=get_payments_keyboard())
 
 
-# ============ ДОСТУП К САЙТУ ============
+# ============ КАТЕГОРИЯ: ДОСТУП К САЙТУ ============
 
 @router.message(F.text == "🔐 Доступ к сайту")
 async def access_category(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    if not user_data.get("registered"):
-        await message.answer("❌ Сначала зарегистрируйтесь (/reg)", reply_markup=get_unregistered_keyboard())
+    user = await check_registration(message, state)
+    if not user:
         return
+    
     await message.answer(
         "🔐 <b>Выберите проблему:</b>\n\n"
         "• 🔓 Открыть доступ\n"
@@ -502,9 +536,12 @@ async def access_category(message: Message, state: FSMContext):
 
 @router.message(F.text == "🔓 Открыть доступ")
 async def open_access(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     title = f"🔐 Запрос доступа: {driver_name} (ID: {driver_id})"
     success = await create_task_via_webhook(title, "Запрос на открытие доступа")
@@ -549,14 +586,14 @@ async def recover_password(message: Message):
     )
 
 
-# ============ ТЕХПОДДЕРЖКА ============
+# ============ КАТЕГОРИЯ: ТЕХПОДДЕРЖКА ============
 
 @router.message(F.text == "🔧 Техподдержка")
 async def tech_support_category(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    if not user_data.get("registered"):
-        await message.answer("❌ Сначала зарегистрируйтесь (/reg)", reply_markup=get_unregistered_keyboard())
+    user = await check_registration(message, state)
+    if not user:
         return
+    
     await message.answer(
         "🔧 <b>Выберите проблему:</b>\n\n"
         "• 📱 Проблема с приложением\n"
@@ -569,9 +606,12 @@ async def tech_support_category(message: Message, state: FSMContext):
 
 @router.message(F.text == "📱 Проблема с приложением")
 async def app_problem(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     title = f"📱 Проблема с приложением: {driver_name} (ID: {driver_id})"
     success = await create_task_via_webhook(title, "Проблема с приложением Яндекс Про")
@@ -588,9 +628,12 @@ async def app_problem(message: Message, state: FSMContext):
 
 @router.message(F.text == "🚫 Нет заказов")
 async def no_orders(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     title = f"🚫 Нет заказов: {driver_name} (ID: {driver_id})"
     success = await create_task_via_webhook(title, "Проблема с заказами")
@@ -607,9 +650,12 @@ async def no_orders(message: Message, state: FSMContext):
 
 @router.message(F.text == "⭐ Упал рейтинг")
 async def rating_dropped(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    user = await check_registration(message, state)
+    if not user:
+        return
+    
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     title = f"⭐ Вопрос по рейтингу: {driver_name} (ID: {driver_id})"
     success = await create_task_via_webhook(title, "Вопрос о падении рейтинга")
@@ -648,23 +694,19 @@ async def handle_ai_message(message: Message, state: FSMContext):
     if text.startswith('/'):
         return
     
-    # 🔥 ВАЖНО: Проверяем, не идёт ли регистрация
+    # Проверяем, не идёт ли регистрация
     current_state = await state.get_state()
     if current_state and "RegistrationStates" in current_state:
         logger.info(f"⏭️ Пропускаем сообщение, идёт регистрация: {current_state}")
         return
     
-    user_data = await state.get_data()
-    
-    if not user_data.get("registered"):
-        await message.answer(
-            "❌ Сначала зарегистрируйтесь: /reg",
-            reply_markup=get_unregistered_keyboard()
-        )
+    # Проверяем регистрацию через БД
+    user = await check_registration(message, state)
+    if not user:
         return
     
-    driver_name = user_data.get('fullname', 'водитель')
-    driver_id = user_data.get('driver_id', 'не указан')
+    driver_name = user.get('fullname', 'водитель')
+    driver_id = user.get('driver_id', 'не указан')
     
     await message.bot.send_chat_action(message.chat.id, "typing")
     
