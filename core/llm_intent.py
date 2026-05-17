@@ -5,7 +5,7 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Читаем базу знаний
+# Читаем базу знаний (оставляем для совместимости, но модель уже обучена)
 with open("core/knowledge_base.txt", "r", encoding="utf-8") as f:
     KNOWLEDGE_BASE = f.read()
 
@@ -13,24 +13,23 @@ with open("core/knowledge_base.txt", "r", encoding="utf-8") as f:
 class LLMIntentClassifier:
     def __init__(self):
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        # Используем обученную модель
+        self.model = "ft:gpt-4o-mini-2024-07-18:neiropark:taxi-support-v3:DgeTtJB7"
     
     async def classify(self, user_message: str) -> dict:
         """
-        Определяет проблему по тексту сообщения с помощью GPT-4o-mini
+        Определяет проблему по тексту сообщения с помощью обученной модели
         """
         prompt = f"""Ты — AI-агент службы поддержки водителей такси.
-
-Вот наша база знаний (категория → проблема → решение):
-{KNOWLEDGE_BASE}
 
 Проанализируй сообщение водителя и верни ТОЛЬКО JSON (без пояснений, без ```json).
 
 Формат ответа:
 {{
-    "category": "Выплаты | Топливная карта | Доступ к сайту",
-    "problem": "название проблемы из базы знаний",
-    "solution": "полный текст решения из базы знаний",
-    "need_manager": true/false,
+    "category": "Выплаты | Топливная карта | Доступ к сайту | Техподдержка",
+    "problem": "название проблемы",
+    "solution": "текст решения",
+    "need_manager": true или false,
     "response": "короткий ответ водителю (2-3 предложения, дружелюбно, с эмодзи)"
 }}
 
@@ -38,7 +37,7 @@ class LLMIntentClassifier:
 """
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": "Ты эксперт службы поддержки такси. Отвечай только JSON."},
                     {"role": "user", "content": prompt}
