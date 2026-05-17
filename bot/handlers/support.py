@@ -75,7 +75,7 @@ async def urgent_operator_start(message: Message, state: FSMContext):
     
     if not user_data.get("registered"):
         await message.answer(
-            "❌ Сначала зарегистрируйтесь (кнопка 📝 Зарегистрироваться)",
+            "❌ Сначала зарегистрируйтесь (кнопка 📝 Зарегистрироваться или /reg)",
             reply_markup=get_unregistered_keyboard()
         )
         return
@@ -88,7 +88,6 @@ async def urgent_operator_start(message: Message, state: FSMContext):
         f"• Вашу проблему\n"
         f"• Что случилось\n"
         f"• Что нужно сделать\n\n"
-        f"<i>Пример: \"У меня заблокировалась топливная карта на заправке, не могу заправиться, нужна срочная помощь\"</i>\n\n"
         f"📌 Для отмены напишите /cancel",
         parse_mode="HTML",
         reply_markup=ReplyKeyboardRemove()
@@ -107,8 +106,7 @@ async def urgent_operator_process(message: Message, state: FSMContext):
     
     if len(user_message) < 5:
         await message.answer(
-            "❌ Пожалуйста, напишите более подробное сообщение (минимум 5 символов).\n\n"
-            "Опишите вашу проблему:",
+            "❌ Пожалуйста, напишите более подробное сообщение (минимум 5 символов).",
             parse_mode="HTML"
         )
         return
@@ -140,16 +138,14 @@ async def urgent_operator_process(message: Message, state: FSMContext):
         await message.answer(
             f"🚨 <b>Срочный запрос отправлен, {driver_name}!</b>\n\n"
             f"✅ Ваше сообщение передано оператору\n"
-            f"📅 Время: {datetime.now().strftime('%H:%M:%S')}\n\n"
-            f"👨‍💼 <b>Оператор свяжется с вами в ближайшее время!</b>\n\n"
-            f"📌 <i>Пожалуйста, оставайтесь на связи.</i>",
+            f"👨‍💼 Оператор свяжется с вами в ближайшее время!",
             parse_mode="HTML",
             reply_markup=get_main_keyboard()
         )
     else:
         await message.answer(
             f"❌ <b>Ошибка при отправке срочного запроса!</b>\n\n"
-            f"Пожалуйста, напишите '📞 Оператор' для связи со специалистом.",
+            f"Пожалуйста, напишите '📞 Оператор'.",
             parse_mode="HTML",
             reply_markup=get_main_keyboard()
         )
@@ -157,27 +153,7 @@ async def urgent_operator_process(message: Message, state: FSMContext):
     await state.clear()
 
 
-# ============ ОБРАБОТЧИК КОМАНД ============
-
-@router.message(Command("cancel"))
-async def cancel_action(message: Message, state: FSMContext):
-    """Отмена текущего действия"""
-    current_state = await state.get_state()
-    
-    if current_state == UrgentOperatorStates.waiting_for_message:
-        await message.answer(
-            "❌ Срочный вызов отменён.\n\n"
-            "Вы можете вернуться в главное меню, нажав /start",
-            parse_mode="HTML",
-            reply_markup=get_main_keyboard()
-        )
-        await state.clear()
-    else:
-        await message.answer(
-            "❌ Нет активных действий для отмены.",
-            reply_markup=get_main_keyboard()
-        )
-
+# ============ ОСНОВНЫЕ КОМАНДЫ ============
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -188,8 +164,7 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(
             f"🚕 <b>С возвращением, {user.get('fullname')}!</b>\n\n"
             f"🆔 Ваш ID: <code>{user.get('driver_id')}</code>\n\n"
-            f"Выберите категорию проблемы на кнопках ниже.\n\n"
-            f"💡 <b>Совет:</b> Вы можете просто написать проблему словами.",
+            f"Выберите категорию проблемы:",
             parse_mode="HTML",
             reply_markup=get_main_keyboard()
         )
@@ -214,19 +189,35 @@ async def cmd_help(message: Message):
     await message.answer(
         "📋 <b>Как пользоваться ботом:</b>\n\n"
         "1️⃣ Нажмите на категорию проблемы\n"
-        "2️⃣ Выберите конкретную проблему\n"
-        "3️⃣ Бот создаст заявку и даст ответ\n\n"
-        "<b>Или просто напишите проблему словами!</b>\n"
-        "Например: 'У меня не пришли деньги на карту'\n\n"
+        "2️⃣ Выберите конкретную проблему\n\n"
+        "<b>Или просто напишите проблему словами!</b>\n\n"
         "<b>Срочный вызов оператора:</b>\n"
-        "🆘 Нажмите 'Оператор срочно' → напишите сообщение\n\n"
+        "🆘 Нажмите 'Оператор срочно'\n\n"
         "<b>Команды:</b>\n"
-        "/start — главное меню\n"
+        "/start — главное менú\n"
         "/help — эта справка\n"
         "/reg — зарегистрироваться\n"
-        "/cancel — отмена текущего действия",
+        "/cancel — отмена",
         parse_mode="HTML"
     )
+
+
+@router.message(Command("cancel"))
+async def cancel_action(message: Message, state: FSMContext):
+    """Отмена текущего действия"""
+    current_state = await state.get_state()
+    
+    if current_state == UrgentOperatorStates.waiting_for_message:
+        await message.answer(
+            "❌ Срочный вызов отменён.",
+            reply_markup=get_main_keyboard()
+        )
+        await state.clear()
+    else:
+        await message.answer(
+            "❌ Нет активных действий для отмены.",
+            reply_markup=get_main_keyboard()
+        )
 
 
 # ============ НАВИГАЦИЯ ============
@@ -234,7 +225,7 @@ async def cmd_help(message: Message):
 @router.message(F.text == "◀️ Назад")
 async def back_to_main(message: Message):
     await message.answer(
-        "🏠 <b>Главное меню</b>\n\nВыберите категорию или напишите проблему:",
+        "🏠 <b>Главное меню</b>",
         parse_mode="HTML",
         reply_markup=get_main_keyboard()
     )
@@ -251,16 +242,13 @@ async def call_operator(message: Message, state: FSMContext):
     driver_name = user_data.get('fullname', message.from_user.full_name)
     driver_id = user_data.get('driver_id', 'не указан')
     
-    status_msg = await message.answer("🔄 Создаю заявку оператору...")
+    status_msg = await message.answer("🔄 Создаю заявку...")
     
     title = f"📞 Вызов оператора: {driver_name} (ID: {driver_id})"
     description = f"""
-Пользователь запросил соединение с оператором.
-
 👤 Водитель: {driver_name}
 🆔 ID: {driver_id}
 📅 Время: {message.date}
-🆔 Telegram ID: {message.from_user.id}
     """
     
     success = await create_task_via_webhook(title, description)
@@ -269,15 +257,12 @@ async def call_operator(message: Message, state: FSMContext):
     
     if success:
         await message.answer(
-            f"👨‍💼 <b>Соединяю с оператором...</b>\n\n"
-            f"✅ Заявка создана в Planfix\n\n"
-            f"Специалист свяжется с вами в ближайшее время.",
+            f"👨‍💼 <b>Заявка создана!</b>\n\nСпециалист свяжется с вами.",
             parse_mode="HTML"
         )
     else:
         await message.answer(
-            f"❌ <b>Ошибка при создании заявки!</b>\n\n"
-            f"Пожалуйста, нажмите '🆘 Оператор срочно'.",
+            f"❌ Ошибка. Нажмите '🆘 Оператор срочно'.",
             parse_mode="HTML"
         )
 
@@ -290,19 +275,18 @@ async def fuel_card_category(message: Message, state: FSMContext):
     
     if not user_data.get("registered"):
         await message.answer(
-            "❌ Сначала зарегистрируйтесь (кнопка 📝 Зарегистрироваться или /reg)",
+            "❌ Сначала зарегистрируйтесь (/reg)",
             reply_markup=get_unregistered_keyboard()
         )
         return
     
     await message.answer(
-        f"⛽ <b>Выберите проблему с топливной картой</b>\n\n"
-        f"👤 Водитель: {user_data.get('fullname')}\n\n"
+        f"⛽ <b>Выберите проблему:</b>\n\n"
+        f"👤 {user_data.get('fullname')}\n\n"
         "• 🔓 Разблокировать карту\n"
         "• 📈 Обновить лимит\n"
         "• ⛽ Не работает на заправке\n"
-        "• 🆕 Заказать новую карту\n\n"
-        "💡 <b>Или просто напишите проблему</b> — я пойму!",
+        "• 🆕 Заказать новую карту",
         parse_mode="HTML",
         reply_markup=get_fuel_card_keyboard()
     )
@@ -314,16 +298,10 @@ async def unblock_card(message: Message, state: FSMContext):
     driver_name = user_data.get('fullname', 'водитель')
     driver_id = user_data.get('driver_id', 'не указан')
     
-    status_msg = await message.answer("🔄 Отправляю запрос в Planfix...")
+    status_msg = await message.answer("🔄 Отправляю запрос...")
     
     title = f"⛽ Разблокировка карты: {driver_name} (ID: {driver_id})"
-    description = f"""
-Запрос на разблокировку топливной карты
-
-👤 Водитель: {driver_name}
-🆔 ID: {driver_id}
-📅 Время: {message.date}
-    """
+    description = f"Водитель: {driver_name}\nID: {driver_id}"
     
     success = await create_task_via_webhook(title, description)
     
@@ -331,31 +309,91 @@ async def unblock_card(message: Message, state: FSMContext):
     
     if success:
         await message.answer(
-            f"🔓 <b>Хорошо, {driver_name}!</b>\n\n"
-            f"✅ Заявка создана в Planfix!\n\n"
-            f"👨‍💼 Специалист свяжется с вами.\n\n"
-            f"💡 <b>Если ситуация срочная</b> — нажмите '🆘 Оператор срочно'",
+            f"🔓 <b>Хорошо, {driver_name}!</b>\n\n✅ Заявка создана!",
             parse_mode="HTML",
             reply_markup=get_fuel_card_keyboard()
         )
     else:
         await message.answer(
-            f"❌ <b>Ошибка при создании заявки!</b>\n\n"
-            f"Пожалуйста, нажмите '🆘 Оператор срочно'.",
-            parse_mode="HTML",
+            f"❌ Ошибка. Нажмите '🆘 Оператор срочно'.",
             reply_markup=get_fuel_card_keyboard()
         )
 
 
-# ============ ОСТАЛЬНЫЕ ОБРАБОТЧИКИ КАТЕГОРИЙ ============
-# (здесь идут остальные обработчики для выплат, доступа, техподдержки...)
-# Они остаются без изменений, просто убедитесь, что они есть
+@router.message(F.text == "📈 Обновить лимит")
+async def update_limit(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    status_msg = await message.answer("🔄 Отправляю запрос...")
+    
+    title = f"📈 Обновление лимита: {driver_name} (ID: {driver_id})"
+    description = f"Запрос на обновление лимита"
+    
+    success = await create_task_via_webhook(title, description)
+    
+    await status_msg.delete()
+    
+    if success:
+        await message.answer(
+            f"📈 <b>Заявка создана!</b>\n\nЛимит будет обновлён.",
+            parse_mode="HTML",
+            reply_markup=get_fuel_card_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка. Нажмите '🆘 Оператор срочно'.",
+            reply_markup=get_fuel_card_keyboard()
+        )
 
 
-# ============ ОБРАБОТЧИК ИИ ДЛЯ ОБЫЧНЫХ СООБЩЕНИЙ ============
-# Важно: этот обработчик НЕ перехватывает кнопки!
+@router.message(F.text == "⛽ Не работает на заправке")
+async def card_not_working(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    driver_id = user_data.get('driver_id', 'не указан')
+    
+    status_msg = await message.answer("🔄 Отправляю запрос...")
+    
+    title = f"⛽ Проблема на заправке: {driver_name} (ID: {driver_id})"
+    description = f"Карта не работает на заправке"
+    
+    success = await create_task_via_webhook(title, description)
+    
+    await status_msg.delete()
+    
+    if success:
+        await message.answer(
+            f"⛽ <b>Заявка создана!</b>\n\nСпециалист проверит.",
+            parse_mode="HTML",
+            reply_markup=get_fuel_card_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Ошибка. Нажмите '🆘 Оператор срочно'.",
+            reply_markup=get_fuel_card_keyboard()
+        )
 
-# Список кнопок, которые НЕ нужно обрабатывать ИИ
+
+@router.message(F.text == "🆕 Заказать новую карту")
+async def order_new_card(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    driver_name = user_data.get('fullname', 'водитель')
+    
+    await message.answer(
+        f"🆕 <b>{driver_name}, заказать новую карту</b>\n\n"
+        f"🔗 Ссылка: <code>https://proracers.by/bncard</code>\n\n"
+        f"💡 Если не пришло SMS — нажмите '🆘 Оператор срочно'.",
+        parse_mode="HTML",
+        reply_markup=get_fuel_card_keyboard(),
+        disable_web_page_preview=True
+    )
+
+
+# ============ ОБРАБОТЧИК ИИ (только для зарегистрированных, не во время регистрации) ============
+
+# Список кнопок, которые НЕ обрабатываем
 IGNORED_BUTTONS = [
     "📝 Зарегистрироваться", "⛽ Топливная карта", "💵 Выплаты и зарплата",
     "🔐 Доступ к сайту", "🔧 Техподдержка", "◀️ Назад", "❓ Помощь",
@@ -370,18 +408,23 @@ IGNORED_BUTTONS = [
 
 @router.message(F.text, ~F.text.in_(IGNORED_BUTTONS))
 async def handle_ai_message(message: Message, state: FSMContext):
-    """Обработка обычных текстовых сообщений через ИИ (кроме кнопок)"""
+    """Обработка текстовых сообщений через ИИ (кроме кнопок)"""
     text = message.text.strip()
     
     # Пропускаем команды
     if text.startswith('/'):
         return
     
+    # Пропускаем, если пользователь в процессе регистрации
+    current_state = await state.get_state()
+    if current_state and "RegistrationStates" in current_state:
+        return
+    
     user_data = await state.get_data()
     
     if not user_data.get("registered"):
         await message.answer(
-            "❌ Сначала зарегистрируйтесь (кнопка 📝 Зарегистрироваться или /reg)",
+            "❌ Сначала зарегистрируйтесь: /reg",
             reply_markup=get_unregistered_keyboard()
         )
         return
@@ -389,36 +432,30 @@ async def handle_ai_message(message: Message, state: FSMContext):
     driver_name = user_data.get('fullname', 'водитель')
     driver_id = user_data.get('driver_id', 'не указан')
     
-    # Отправляем статус "печатает"
     await message.bot.send_chat_action(message.chat.id, "typing")
     
-    # Используем ИИ для анализа
     result = await llm_classifier.classify(text)
     
     if result.get("need_manager"):
         title = f"{result.get('category')}: {result.get('problem')} - {driver_name} (ID: {driver_id})"
         description = f"""
 Сообщение: {text}
-
 Категория: {result.get('category')}
 Проблема: {result.get('problem')}
-Решение: {result.get('solution')}
-
-👤 Водитель: {driver_name}
-🆔 ID: {driver_id}
-📅 Время: {message.date}
+Водитель: {driver_name}
+ID: {driver_id}
         """
         success = await create_task_via_webhook(title, description)
         
         if success:
             await message.answer(
-                f"{result.get('response')}\n\n✅ Заявка создана в Planfix!",
+                f"{result.get('response')}\n\n✅ Заявка создана!",
                 parse_mode="HTML",
                 reply_markup=get_main_keyboard()
             )
         else:
             await message.answer(
-                f"{result.get('response')}\n\n⚠️ Ошибка при создании заявки. Нажмите '🆘 Оператор срочно'.",
+                f"{result.get('response')}\n\n⚠️ Ошибка. Нажмите '🆘 Оператор срочно'.",
                 parse_mode="HTML",
                 reply_markup=get_main_keyboard()
             )
