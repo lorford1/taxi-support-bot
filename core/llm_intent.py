@@ -13,7 +13,8 @@ with open("core/knowledge_base.txt", "r", encoding="utf-8") as f:
 class LLMIntentClassifier:
     def __init__(self):
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        self.fine_tuned_model = "ft:gpt-4o-mini-2024-07-18:neiropark:taxi-support-v3:DgeTtJB7"
+        # НОВАЯ МОДЕЛЬ V4 (обучена на 3652 примерах)
+        self.fine_tuned_model = "ft:gpt-4o-mini-2024-07-18:neiropark:taxi-support-v4:DhlqPAT7"
         self.fallback_model = "gpt-4o-mini"
     
     async def classify(self, user_message: str, driver_name: str = None) -> dict:
@@ -53,7 +54,6 @@ class LLMIntentClassifier:
             content = content.replace("```json", "").replace("```", "").strip()
             result = json.loads(content)
             
-            # Если модель не распознала категорию, используем fallback
             if result.get("category") == "unknown" or result.get("need_manager") is None:
                 logger.info(f"Обученная модель не распознала, используем fallback")
                 return await self._fallback_classify(user_message, driver_name)
@@ -65,7 +65,7 @@ class LLMIntentClassifier:
             return await self._fallback_classify(user_message, driver_name)
     
     async def _fallback_classify(self, user_message: str, driver_name: str) -> dict:
-        """Запасной вариант с обычной GPT-4o-mini и полной базой знаний"""
+        """Запасной вариант с обычной GPT-4o-mini"""
         prompt = f"""Ты — AI-агент службы поддержки водителей такси.
 
 Вот наша база знаний:
